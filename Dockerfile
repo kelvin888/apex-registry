@@ -41,7 +41,6 @@ RUN mkdir -p /app/data/packages
 
 # Set environment
 ENV NODE_ENV=production
-ENV HOST=0.0.0.0
 ENV PORT=4000
 ENV DATABASE_PATH=/app/data/apex.db
 ENV STORAGE_PATH=/app/data/packages

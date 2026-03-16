@@ -49,7 +49,8 @@ export type Config = z.infer<typeof configSchema>;
  */
 export function loadConfig(): Config {
   const raw = {
-    host: process.env.HOST,
+    // Force IPv4 - Railway doesn't support IPv6 binding well
+    host: process.env.HOST === '::' ? '0.0.0.0' : process.env.HOST,
     port: process.env.PORT,
     nodeEnv: process.env.NODE_ENV,
     databasePath: process.env.DATABASE_PATH,
