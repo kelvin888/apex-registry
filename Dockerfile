@@ -1,12 +1,15 @@
 # APEX Registry Server Dockerfile
 FROM node:20-alpine AS builder
 
+# Install build dependencies for native modules (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Install all dependencies
 RUN npm ci
 
 # Copy source
@@ -15,14 +18,19 @@ COPY . .
 # Build
 RUN npm run build
 
+# Prune dev dependencies
+RUN npm prune --omit=dev
+
 # Production image
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install production dependencies only
+# Copy package.json for reference
 COPY package*.json ./
-RUN npm ci --omit=dev
+
+# Copy node_modules from builder (already pruned to production only)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy built files
 COPY --from=builder /app/dist ./dist
