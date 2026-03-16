@@ -1,0 +1,79 @@
+{
+  "name": "@qt-test/apex-server",
+  "version": "0.1.0",
+  "private": false,
+  "description": "APEX mini-app distribution server - package hosting, signing, and delivery",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicholasodion/apex-server.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "apex-server": "./bin/server.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/cli.ts --format cjs,esm --dts",
+    "dev": "tsx watch src/cli.ts",
+    "start": "node dist/cli.js",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "apex",
+    "miniapp",
+    "distribution",
+    "server",
+    "package-registry"
+  ],
+  "author": "Interswitch",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.0",
+    "@fastify/jwt": "^8.0.0",
+    "@fastify/multipart": "^8.1.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/swagger": "^8.14.0",
+    "@fastify/swagger-ui": "^3.0.0",
+    "bcrypt": "^5.1.0",
+    "better-sqlite3": "^12.8.0",
+    "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.29.0",
+    "fastify": "^4.26.0",
+    "mime-types": "^2.1.35",
+    "nanoid": "^5.0.0",
+    "pino": "^8.19.0",
+    "pino-pretty": "^10.3.0",
+    "semver": "^7.6.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^20.0.0",
+    "@types/semver": "^7.5.8",
+    "@vitest/coverage-v8": "^1.0.0",
+    "drizzle-kit": "^0.20.0",
+    "eslint": "^8.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
