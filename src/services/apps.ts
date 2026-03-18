@@ -55,6 +55,8 @@ export async function createApp(developerId: string, input: CreateAppInput): Pro
     throw new Error('App ID already registered');
   }
 
+  const autoApprove = process.env.APEX_AUTO_APPROVE === 'true';
+
   const now = new Date();
   const app: NewApp = {
     id: nanoid(),
@@ -64,8 +66,8 @@ export async function createApp(developerId: string, input: CreateAppInput): Pro
     description: input.description,
     icon: input.icon,
     category: input.category,
-    status: 'draft',
-    isPublic: false,
+    status: autoApprove ? 'approved' : 'draft',
+    isPublic: autoApprove,
     createdAt: now,
     updatedAt: now,
   };
