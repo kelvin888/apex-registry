@@ -88,6 +88,8 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
 
     const latestVersion = await versionsService.getLatestVersion(app.id);
 
+    const baseUrl = `${request.protocol}://${request.hostname}`;
+
     return {
       appId: app.appId,
       name: app.name,
@@ -103,6 +105,7 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
         packageSize: latestVersion.packageSize,
         packageHash: latestVersion.packageHash,
         publishedAt: latestVersion.publishedAt,
+        downloadUrl: `${baseUrl}/api/registry/apps/${app.appId}/download`,
       } : null,
     };
   });
