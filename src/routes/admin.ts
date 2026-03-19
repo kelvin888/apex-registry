@@ -168,7 +168,11 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
         const now = new Date();
 
         await db.update(apps)
-            .set({ status: newStatus as any, updatedAt: now })
+            .set({
+                status: newStatus as any,
+                isPublic: input.action === 'approve',
+                updatedAt: now,
+            })
             .where(eq(apps.id, appId));
 
         // Find the latest version for review record (if any)
