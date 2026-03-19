@@ -6,7 +6,7 @@
 
 import { eq, and, desc, like, or, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { getDatabase, apps, versions, downloads, type App, type NewApp, type Version } from '../db';
+import { getDatabase, apps, versions, downloads, reviews, type App, type NewApp, type Version } from '../db';
 
 export interface CreateAppInput {
   appId: string;
@@ -137,7 +137,12 @@ export async function deleteApp(id: string, developerId: string): Promise<boolea
     throw new Error('Cannot delete a published app. Unpublish it first.');
   }
 
-  // Cascade-delete all versions then the app
+  // Cascade-delete child rows in FK order: reviews → downloads → versions → app
+  const appVersionIds = await db.select({ id: versions.id }).from(versions).where(eq(versions.appId, id));
+  for (const { id: vId } of appVersionIds) {
+    await db.delete(reviews).where(eq(reviews.versionId, vId));
+    await db.delete(downloads).where(eq(downloads.versionId, vId));
+  }
   await db.delete(versions).where(eq(versions.appId, id));
   await db.delete(apps).where(eq(apps.id, id));
 

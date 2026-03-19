@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as semver from 'semver';
 import AdmZip from 'adm-zip';
-import { getDatabase, versions, apps, downloads, type Version, type NewVersion } from '../db';
+import { getDatabase, versions, apps, downloads, reviews, type Version, type NewVersion } from '../db';
 import { getStoragePath, type Config } from '../config';
 
 export interface CreateVersionInput {
@@ -304,7 +304,8 @@ export async function deleteVersion(id: string, developerId: string, config: Con
     }
   }
 
-  // Delete downloads
+  // Delete child rows in FK order: reviews → downloads → version
+  await db.delete(reviews).where(eq(reviews.versionId, id));
   await db.delete(downloads).where(eq(downloads.versionId, id));
 
   // Delete version
