@@ -212,7 +212,9 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
             offset?: number;
         };
 
-        const condition = search ? like(developers.name, `%${search}%`) : undefined;
+        const condition = search
+            ? and(eq(developers.role, 'developer'), like(developers.name, `%${search}%`))
+            : eq(developers.role, 'developer');
 
         const rows = await db
             .select({
