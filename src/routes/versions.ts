@@ -51,8 +51,14 @@ export const versionsRoutes: FastifyPluginAsync = async (fastify) => {
     const { appId } = request.params as { appId: string };
     const input = createVersionSchema.parse(request.body);
 
+    const appRecord = await appsService.getAppByAppId(appId);
+    if (!appRecord) {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
     try {
-      const version = await versionsService.createVersion(appId, request.user.id, input);
+      const version = await versionsService.createVersion(appRecord.id, request.user.id, input);
       reply.code(201);
       return version;
     } catch (error) {

@@ -158,7 +158,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
         const input = reviewSchema.parse(request.body);
         const db = getDatabase();
 
-        const app = await db.select().from(apps).where(eq(apps.id, appId)).get();
+        const app = await db.select().from(apps).where(eq(apps.appId, appId)).get();
         if (!app) {
             reply.code(404).send({ error: 'App not found' });
             return;
@@ -173,13 +173,13 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
                 isPublic: input.action === 'approve',
                 updatedAt: now,
             })
-            .where(eq(apps.id, appId));
+            .where(eq(apps.id, app.id));
 
         // Find the latest version for review record (if any)
         const latestVersion = await db
             .select({ id: versions.id })
             .from(versions)
-            .where(eq(versions.appId, appId))
+            .where(eq(versions.appId, app.id))
             .get();
 
         if (latestVersion) {

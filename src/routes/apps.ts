@@ -115,7 +115,7 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const { appId } = request.params as { appId: string };
 
-    const app = await appsService.getAppById(appId);
+    const app = await appsService.getAppByAppId(appId);
     if (!app) {
       reply.code(404);
       throw new Error('App not found');
@@ -165,8 +165,14 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
     const { appId } = request.params as { appId: string };
     const input = updateAppSchema.parse(request.body);
 
+    const appRecord = await appsService.getAppByAppId(appId);
+    if (!appRecord) {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
     try {
-      const app = await appsService.updateApp(appId, request.user.id, input);
+      const app = await appsService.updateApp(appRecord.id, request.user.id, input);
       return app;
     } catch (error) {
       reply.code(400);
@@ -194,8 +200,14 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const { appId } = request.params as { appId: string };
 
+    const appRecord = await appsService.getAppByAppId(appId);
+    if (!appRecord) {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
     try {
-      await appsService.deleteApp(appId, request.user.id);
+      await appsService.deleteApp(appRecord.id, request.user.id);
       return { success: true };
     } catch (error) {
       reply.code(400);
@@ -223,8 +235,14 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const { appId } = request.params as { appId: string };
 
+    const appRecord = await appsService.getAppByAppId(appId);
+    if (!appRecord) {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
     try {
-      const app = await appsService.submitForReview(appId, request.user.id);
+      const app = await appsService.submitForReview(appRecord.id, request.user.id);
       return app;
     } catch (error) {
       reply.code(400);
@@ -252,8 +270,14 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const { appId } = request.params as { appId: string };
 
+    const appRecord = await appsService.getAppByAppId(appId);
+    if (!appRecord) {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
     try {
-      const app = await appsService.publishApp(appId, request.user.id);
+      const app = await appsService.publishApp(appRecord.id, request.user.id);
       return app;
     } catch (error) {
       reply.code(400);
@@ -281,8 +305,14 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const { appId } = request.params as { appId: string };
 
+    const appRecord = await appsService.getAppByAppId(appId);
+    if (!appRecord) {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
     try {
-      const app = await appsService.unpublishApp(appId, request.user.id);
+      const app = await appsService.unpublishApp(appRecord.id, request.user.id);
       return app;
     } catch (error) {
       reply.code(400);
@@ -317,13 +347,13 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
     const { appId } = request.params as { appId: string };
     const { days = 30 } = request.query as { days?: number };
 
-    const app = await appsService.getAppById(appId);
+    const app = await appsService.getAppByAppId(appId);
     if (!app || app.developerId !== request.user.id) {
       reply.code(404);
       throw new Error('App not found');
     }
 
-    const stats = await versionsService.getDownloadStats(appId, days);
+    const stats = await versionsService.getDownloadStats(app.id, days);
     return { stats };
   });
 };

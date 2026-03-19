@@ -156,7 +156,9 @@ export async function uploadPackage(
   // Process package (in production, this would be a background job)
   await processPackage(versionId);
 
-  return updated[0];
+  // Re-fetch the version to return the final status set by processPackage
+  const processed = await db.select().from(versions).where(eq(versions.id, versionId)).get();
+  return processed as Version;
 }
 
 /**
