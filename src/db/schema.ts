@@ -18,6 +18,7 @@ export const developers = sqliteTable('developers', {
   apiKey: text('api_key').notNull().unique(),
   apiKeyHash: text('api_key_hash').notNull(),
   role: text('role', { enum: ['developer', 'admin'] }).notNull().default('developer'),
+  suspended: integer('suspended', { mode: 'boolean' }).notNull().default(false),
   verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),

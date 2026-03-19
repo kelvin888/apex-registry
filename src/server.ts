@@ -15,7 +15,7 @@ import { type Config } from './config';
 import { initDatabase, runMigrations, getDatabase, developers } from './db';
 import { getDatabasePath } from './config';
 import * as authService from './services/auth';
-import { authRoutes, appsRoutes, versionsRoutes, registryRoutes, dashboardRoutes } from './routes';
+import { authRoutes, appsRoutes, versionsRoutes, registryRoutes, dashboardRoutes, adminRoutes } from './routes';
 import { eq } from 'drizzle-orm';
 
 // Extend Fastify types
@@ -140,6 +140,10 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
       if (apiKey) {
         const developer = await authService.verifyApiKey(apiKey);
         if (developer) {
+          if (developer.suspended) {
+            reply.code(401).send({ error: 'Account suspended' });
+            return;
+          }
           request.user = {
             id: developer.id,
             email: developer.email,
@@ -149,8 +153,19 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
         }
       }
 
-      // Fall back to JWT
+      // Fall back to JWT — verify token then fetch live user to check suspension
       await request.jwtVerify();
+      const liveUser = await authService.getDeveloperById(request.user.id);
+      if (!liveUser) {
+        reply.code(401).send({ error: 'Unauthorized' });
+        return;
+      }
+      if (liveUser.suspended) {
+        reply.code(401).send({ error: 'Account suspended' });
+        return;
+      }
+      // Sync role in case it was changed after token issuance
+      request.user.role = liveUser.role;
     } catch {
       reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -213,6 +228,7 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
   await fastify.register(versionsRoutes, { prefix: '/api/apps' });
   await fastify.register(registryRoutes, { prefix: '/api/registry' });
   await fastify.register(dashboardRoutes, { prefix: '/api/dashboard' });
+  await fastify.register(adminRoutes, { prefix: '/api/admin' });
 
   // Error handler
   fastify.setErrorHandler((error, request, reply) => {

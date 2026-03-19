@@ -9,3 +9,4 @@ export { appsRoutes } from './apps';
 export { versionsRoutes } from './versions';
 export { registryRoutes } from './registry';
 export { dashboardRoutes } from './dashboard';
+export { adminRoutes } from './admin';

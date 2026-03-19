@@ -186,4 +186,11 @@ export function runMigrations(): void {
     CREATE INDEX IF NOT EXISTS review_version_idx ON reviews(version_id);
     CREATE INDEX IF NOT EXISTS review_status_idx ON reviews(status);
   `);
+
+  // Additive migrations — safe to run on existing databases
+  const columns = sqlite.pragma('table_info(developers)') as Array<{ name: string }>;
+  const hasSupended = columns.some((c) => c.name === 'suspended');
+  if (!hasSupended) {
+    sqlite.exec(`ALTER TABLE developers ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0`);
+  }
 }
