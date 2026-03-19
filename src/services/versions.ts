@@ -166,20 +166,16 @@ async function processPackage(versionId: string): Promise<void> {
   const db = getDatabase();
 
   try {
-    // In production, validate package contents, extract metadata, generate signature
-    // For now, just mark as ready
+    // Mark version as ready, then move the parent app to pending review
     await db.update(versions)
       .set({ status: 'ready' })
       .where(eq(versions.id, versionId));
 
-    // If auto-approve is enabled, also approve the parent app
-    if (process.env.APEX_AUTO_APPROVE === 'true') {
-      const version = await db.select().from(versions).where(eq(versions.id, versionId)).get();
-      if (version) {
-        await db.update(apps)
-          .set({ status: 'approved', isPublic: true, updatedAt: new Date() })
-          .where(eq(apps.id, version.appId));
-      }
+    const version = await db.select().from(versions).where(eq(versions.id, versionId)).get();
+    if (version) {
+      await db.update(apps)
+        .set({ status: 'pending', updatedAt: new Date() })
+        .where(and(eq(apps.id, version.appId), eq(apps.isPublic, false)));
     }
   } catch (error) {
     await db.update(versions)
