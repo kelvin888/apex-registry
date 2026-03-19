@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as semver from 'semver';
+import AdmZip from 'adm-zip';
 import { getDatabase, versions, apps, downloads, type Version, type NewVersion } from '../db';
 import { getStoragePath, type Config } from '../config';
 
@@ -127,6 +128,17 @@ export async function uploadPackage(
   // Validate package (should be a .map file)
   if (!input.filename.endsWith('.map')) {
     throw new Error('Package must be a .map file');
+  }
+
+  // Validate ZIP structure: must be a valid ZIP containing manifest.json
+  let zip: AdmZip;
+  try {
+    zip = new AdmZip(input.buffer);
+  } catch {
+    throw new Error('Package is not a valid ZIP archive');
+  }
+  if (!zip.getEntry('manifest.json')) {
+    throw new Error('Invalid package: missing manifest.json. Build your app with `apex build` first.');
   }
 
   // Calculate hash

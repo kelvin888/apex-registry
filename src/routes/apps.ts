@@ -55,10 +55,18 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request) => {
     const query = listAppsSchema.parse(request.query);
 
-    return appsService.listApps({
+    const result = await appsService.listApps({
       developerId: request.user.id,
       ...query,
     });
+
+    return {
+      apps: result.apps.map(app => ({
+        ...app,
+        latestVersion: app.latestVersion?.version,
+      })),
+      total: result.total,
+    };
   });
 
   /**
