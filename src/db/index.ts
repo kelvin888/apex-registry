@@ -40,6 +40,10 @@ export function initDatabase(config: DatabaseConfig): ReturnType<typeof drizzle>
 
   // Enable WAL mode for better performance
   sqlite.pragma('journal_mode = WAL');
+  // Enforce FK constraints — better-sqlite3 v12 / SQLite 3.51+ enables this by
+  // default (SQLITE_DEFAULT_FOREIGN_KEYS=1), but we set it explicitly so the
+  // behaviour is defined regardless of the bundled SQLite version.
+  sqlite.pragma('foreign_keys = ON');
 
   db = drizzle(sqlite, { schema });
 

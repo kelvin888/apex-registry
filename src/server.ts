@@ -222,15 +222,8 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
     return { message: `✓ ${email} promoted to admin` };
   });
 
-  // Register routes
-  await fastify.register(authRoutes, { prefix: '/api/auth' });
-  await fastify.register(appsRoutes, { prefix: '/api/apps' });
-  await fastify.register(versionsRoutes, { prefix: '/api/apps' });
-  await fastify.register(registryRoutes, { prefix: '/api/registry' });
-  await fastify.register(dashboardRoutes, { prefix: '/api/dashboard' });
-  await fastify.register(adminRoutes, { prefix: '/api/admin' });
-
-  // Error handler
+  // Error handler — must be registered before route plugins so child scopes
+  // inherit it and Fastify doesn't fall back to its built-in format.
   fastify.setErrorHandler((error, request, reply) => {
     fastify.log.error(error);
 
@@ -244,6 +237,14 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
       statusCode,
     });
   });
+
+  // Register routes
+  await fastify.register(authRoutes, { prefix: '/api/auth' });
+  await fastify.register(appsRoutes, { prefix: '/api/apps' });
+  await fastify.register(versionsRoutes, { prefix: '/api/apps' });
+  await fastify.register(registryRoutes, { prefix: '/api/registry' });
+  await fastify.register(dashboardRoutes, { prefix: '/api/dashboard' });
+  await fastify.register(adminRoutes, { prefix: '/api/admin' });
 
   return fastify;
 }
