@@ -132,15 +132,13 @@ export async function deleteApp(id: string, developerId: string): Promise<boolea
     throw new Error('App not found or access denied');
   }
 
-  // Check for published versions
-  const publishedVersions = await db.select().from(versions)
-    .where(and(eq(versions.appId, id), eq(versions.status, 'ready')))
-    .get();
-
-  if (publishedVersions) {
-    throw new Error('Cannot delete app with published versions');
+  // Block deletion of live public apps — developer must unpublish first
+  if (app.isPublic && app.status === 'approved') {
+    throw new Error('Cannot delete a published app. Unpublish it first.');
   }
 
+  // Cascade-delete all versions then the app
+  await db.delete(versions).where(eq(versions.appId, id));
   await db.delete(apps).where(eq(apps.id, id));
 
   return true;
