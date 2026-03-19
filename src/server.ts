@@ -12,10 +12,11 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import rateLimit from '@fastify/rate-limit';
 import { type Config } from './config';
-import { initDatabase, runMigrations } from './db';
+import { initDatabase, runMigrations, getDatabase, developers } from './db';
 import { getDatabasePath } from './config';
 import * as authService from './services/auth';
 import { authRoutes, appsRoutes, versionsRoutes, registryRoutes, dashboardRoutes } from './routes';
+import { eq } from 'drizzle-orm';
 
 // Extend Fastify types
 declare module 'fastify' {
@@ -174,6 +175,37 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
     status: 'ok',
     timestamp: new Date().toISOString(),
   }));
+
+  // One-time admin bootstrap — protected by BOOTSTRAP_SECRET env var
+  fastify.post('/api/admin/bootstrap', async (request: any, reply: any) => {
+    const secret = process.env.BOOTSTRAP_SECRET;
+    if (!secret) {
+      reply.code(403).send({ error: 'Bootstrap is disabled (BOOTSTRAP_SECRET not set)' });
+      return;
+    }
+    const { email, secret: provided } = request.body as { email?: string; secret?: string };
+    if (!provided || provided !== secret) {
+      reply.code(403).send({ error: 'Invalid secret' });
+      return;
+    }
+    if (!email) {
+      reply.code(400).send({ error: 'email is required' });
+      return;
+    }
+    const db = getDatabase();
+    const existing = db.select({ id: developers.id, role: developers.role })
+      .from(developers).where(eq(developers.email, email)).get();
+    if (!existing) {
+      reply.code(404).send({ error: `No account found for ${email}` });
+      return;
+    }
+    if (existing.role === 'admin') {
+      return { message: `${email} is already an admin` };
+    }
+    db.update(developers).set({ role: 'admin', updatedAt: new Date() })
+      .where(eq(developers.email, email)).run();
+    return { message: `✓ ${email} promoted to admin` };
+  });
 
   // Register routes
   await fastify.register(authRoutes, { prefix: '/api/auth' });
