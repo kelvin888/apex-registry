@@ -243,4 +243,74 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
     return { success: true };
   });
+
+  /**
+   * GET /certificates — list signing certificates for current developer
+   */
+  fastify.get('/certificates', {
+    onRequest: [fastify.authenticate],
+    schema: {
+      description: 'List signing certificates',
+      tags: ['auth'],
+      security: [{ bearerAuth: [] }],
+    },
+  }, async (request: any) => {
+    return authService.listCertificates(request.user.id);
+  });
+
+  /**
+   * POST /certificates — register a public key as a signing certificate
+   */
+  fastify.post('/certificates', {
+    onRequest: [fastify.authenticate],
+    schema: {
+      description: 'Register a signing certificate',
+      tags: ['auth'],
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['name', 'publicKey'],
+        properties: {
+          name: { type: 'string' },
+          publicKey: { type: 'string' },
+        },
+      },
+    },
+  }, async (request: any, reply: any) => {
+    const { name, publicKey } = request.body as { name: string; publicKey: string };
+    try {
+      const result = await authService.registerCertificate(request.user.id, name, publicKey);
+      return result;
+    } catch (error) {
+      reply.code(400);
+      throw error;
+    }
+  });
+
+  /**
+   * POST /certificates/:id/revoke — revoke a signing certificate
+   */
+  fastify.post('/certificates/:id/revoke', {
+    onRequest: [fastify.authenticate],
+    schema: {
+      description: 'Revoke a signing certificate',
+      tags: ['auth'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string' },
+        },
+      },
+    },
+  }, async (request: any, reply: any) => {
+    const { id } = request.params as { id: string };
+    const ok = await authService.revokeCertificate(request.user.id, id);
+    if (!ok) {
+      reply.code(404);
+      throw new Error('Certificate not found');
+    }
+    return { success: true };
+  });
 };

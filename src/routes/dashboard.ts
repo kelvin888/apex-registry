@@ -68,10 +68,10 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
             totalDownloads = dlResult?.count ?? 0;
         }
 
-        // Total registered developers (platform-wide)
-        const totalDevelopers = await db.select({ count: sql<number>`count(*)` })
-            .from(developers)
-            .get();
+        // Total registered developers — admin-only platform metric
+        const totalDevelopers = request.user.role === 'admin'
+            ? await db.select({ count: sql<number>`count(*)` }).from(developers).get()
+            : null;
 
         // 30-day window change estimates (downloads this month vs previous month)
         const now = Date.now();

@@ -6,8 +6,9 @@
 
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcrypt';
+import * as crypto from 'node:crypto';
 import { nanoid } from 'nanoid';
-import { getDatabase, developers, apiKeys, type Developer, type NewDeveloper } from '../db';
+import { getDatabase, developers, apiKeys, certificates, type Developer, type NewDeveloper } from '../db';
 
 const SALT_ROUNDS = 12;
 
@@ -194,6 +195,64 @@ export async function revokeApiKey(developerId: string, keyId: string): Promise<
     .returning();
 
   return result.length > 0;
+}
+
+/**
+ * List certificates for a developer
+ */
+export async function listCertificates(developerId: string) {
+  const db = getDatabase();
+  const rows = await db.select().from(certificates).where(eq(certificates.developerId, developerId));
+  const now = new Date();
+  return rows.map(c => ({
+    ...c,
+    status: c.expiresAt && c.expiresAt < now ? 'expired' : 'active',
+  }));
+}
+
+/**
+ * Register a certificate (public key) for a developer
+ */
+export async function registerCertificate(developerId: string, name: string, publicKey: string) {
+  const db = getDatabase();
+
+  const fingerprint = crypto.createHash('sha256').update(publicKey).digest('hex');
+
+  const existing = await db.select().from(certificates).where(eq(certificates.fingerprint, fingerprint)).get();
+  if (existing) {
+    throw new Error('This public key is already registered');
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(now);
+  expiresAt.setFullYear(expiresAt.getFullYear() + 2); // 2-year validity
+
+  const id = nanoid();
+  await db.insert(certificates).values({
+    id,
+    developerId,
+    name,
+    publicKey,
+    fingerprint,
+    algorithm: 'RSA-SHA256',
+    isDefault: false,
+    expiresAt,
+    createdAt: now,
+  });
+
+  return { id, fingerprint, certificate: publicKey, expiresAt };
+}
+
+/**
+ * Revoke (delete) a certificate owned by a developer
+ */
+export async function revokeCertificate(developerId: string, certId: string): Promise<boolean> {
+  const db = getDatabase();
+  const result = await db
+    .delete(certificates)
+    .where(eq(certificates.id, certId))
+    .returning();
+  return result.length > 0 && result[0].developerId === developerId;
 }
 
 /**
