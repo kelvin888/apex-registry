@@ -34,7 +34,7 @@ export interface ListAppsOptions {
 }
 
 export interface AppWithStats extends App {
-  latestVersion?: string;
+  latestVersion?: Version;
   totalDownloads: number;
 }
 
@@ -221,7 +221,7 @@ export async function listApps(options: ListAppsOptions = {}): Promise<{ apps: A
 
       return {
         ...app,
-        latestVersion: latestVersion?.version,
+        latestVersion: latestVersion ?? undefined,
         totalDownloads: downloadCount?.count || 0,
       };
     })

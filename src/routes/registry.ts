@@ -47,6 +47,8 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
       publicOnly: true,
     });
 
+    const baseUrl = `${request.protocol}://${request.hostname}`;
+
     // Return only public info
     return {
       apps: result.apps.map(app => ({
@@ -55,7 +57,13 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
         description: app.description,
         icon: app.icon,
         category: app.category,
-        latestVersion: app.latestVersion,
+        latestVersion: app.latestVersion ? {
+          version: app.latestVersion.version,
+          versionCode: app.latestVersion.versionCode,
+          changelog: app.latestVersion.changelog,
+          downloadUrl: `${baseUrl}/api/registry/apps/${app.appId}/download`,
+          packageSize: app.latestVersion.packageSize,
+        } : null,
         downloads: app.totalDownloads,
       })),
       total: result.total,
