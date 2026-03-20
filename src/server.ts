@@ -49,6 +49,8 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
 
   // Create Fastify instance
   const fastify = Fastify({
+    // Trust Railway's reverse proxy so request.protocol reflects the original scheme
+    trustProxy: true,
     logger: options.logger === false ? false : {
       level: config.logLevel,
       transport: config.nodeEnv === 'development' ? {

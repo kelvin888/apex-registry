@@ -8,6 +8,9 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import * as path from 'path';
+import AdmZip from 'adm-zip';
+import mime from 'mime-types';
 import * as appsService from '../services/apps';
 import * as versionsService from '../services/versions';
 
@@ -47,7 +50,8 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
       publicOnly: true,
     });
 
-    const baseUrl = `${request.protocol}://${request.hostname}`;
+    const proto = (request.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || request.protocol;
+    const baseUrl = `${proto}://${request.hostname}`;
 
     // Return only public info
     return {
@@ -96,7 +100,8 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
 
     const latestVersion = await versionsService.getLatestVersion(app.id);
 
-    const baseUrl = `${request.protocol}://${request.hostname}`;
+    const proto = (request.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || request.protocol;
+    const baseUrl = `${proto}://${request.hostname}`;
 
     return {
       appId: app.appId,
@@ -242,6 +247,78 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
       .header('X-Package-Signature', version.signature || '');
 
     return reply.send(stream);
+  });
+
+  /**
+   * Serve individual file from app package (Re.Pack-style lazy loading).
+   * Host apps fetch manifest.json, app.js, page JS etc. directly — no ZIP download,
+   * no local install. Each launch gets the freshest content from the server.
+   */
+  fastify.get('/apps/:appId/files/*', {
+    schema: {
+      description: 'Serve a single file from the latest app package',
+      tags: ['registry'],
+      params: {
+        type: 'object',
+        required: ['appId'],
+        properties: {
+          appId: { type: 'string' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { appId } = request.params as { appId: string };
+    const rawFilepath = (request.params as Record<string, string>)['*'];
+
+    // Security: reject empty, absolute, or path-traversal attempts
+    if (!rawFilepath) {
+      reply.code(400);
+      throw new Error('File path required');
+    }
+    const normalizedPath = path.posix.normalize(rawFilepath);
+    if (
+      path.posix.isAbsolute(normalizedPath) ||
+      normalizedPath.startsWith('../') ||
+      normalizedPath.includes('/../') ||
+      normalizedPath.includes('\0')
+    ) {
+      reply.code(400);
+      throw new Error('Invalid file path');
+    }
+
+    const app = await appsService.getAppByAppId(appId);
+    if (!app || !app.isPublic || app.status !== 'approved') {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
+    const version = await versionsService.getLatestVersion(app.id);
+    if (!version || !version.packagePath) {
+      reply.code(404);
+      throw new Error('Version not found');
+    }
+
+    if (!fs.existsSync(version.packagePath)) {
+      reply.code(500);
+      throw new Error('Package file not found on server');
+    }
+
+    const zip = new AdmZip(version.packagePath);
+    const entry = zip.getEntry(normalizedPath);
+
+    if (!entry || entry.isDirectory) {
+      reply.code(404);
+      throw new Error(`File not found in package: ${normalizedPath}`);
+    }
+
+    const contentType = mime.lookup(normalizedPath) || 'application/octet-stream';
+
+    reply
+      .header('Content-Type', contentType)
+      .header('Access-Control-Allow-Origin', '*')
+      .header('Cache-Control', 'no-store, no-cache');
+
+    return reply.send(entry.getData());
   });
 
   /**
