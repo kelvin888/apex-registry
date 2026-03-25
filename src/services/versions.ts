@@ -57,7 +57,7 @@ export async function createVersion(appId: string, developerId: string, input: C
     .get();
 
   if (existing) {
-    throw new Error(`Version ${input.version} already exists`);
+    await db.delete(versions).where(eq(versions.id, existing.id));
   }
 
   // Get next version code
@@ -187,9 +187,12 @@ async function processPackage(versionId: string): Promise<void> {
 
     const version = await db.select().from(versions).where(eq(versions.id, versionId)).get();
     if (version) {
+      const autoApprove = process.env.AUTO_APPROVE_PUBLISH === 'true';
       await db.update(apps)
-        .set({ status: 'pending', updatedAt: new Date() })
-        .where(and(eq(apps.id, version.appId), eq(apps.isPublic, false)));
+        .set(autoApprove
+          ? { status: 'approved', isPublic: true, updatedAt: new Date() }
+          : { status: 'pending', updatedAt: new Date() })
+        .where(eq(apps.id, version.appId));
     }
   } catch (error) {
     await db.update(versions)
