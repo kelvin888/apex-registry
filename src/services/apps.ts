@@ -94,6 +94,23 @@ export async function getAppByAppId(appId: string): Promise<App | null> {
 }
 
 /**
+ * Get app by appId enriched with aggregate stats
+ */
+export async function getAppByAppIdWithStats(appId: string): Promise<(App & { totalDownloads: number }) | null> {
+  const db = getDatabase();
+  const app = await db.select().from(apps).where(eq(apps.appId, appId)).get();
+  if (!app) return null;
+
+  const downloadCount = await db.select({ count: sql<number>`count(*)` })
+    .from(downloads)
+    .innerJoin(versions, eq(downloads.versionId, versions.id))
+    .where(eq(versions.appId, app.id))
+    .get();
+
+  return { ...app, totalDownloads: downloadCount?.count || 0 };
+}
+
+/**
  * Update app
  */
 export async function updateApp(id: string, developerId: string, input: UpdateAppInput): Promise<App> {

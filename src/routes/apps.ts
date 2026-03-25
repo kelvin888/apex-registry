@@ -137,10 +137,28 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Get versions
-    const versions = await versionsService.listVersions(app.id);
+    // Get versions with per-version download counts
+    const versionList = await versionsService.listVersions(app.id);
 
-    return { ...app, versions };
+    // Compute total downloads across all versions
+    const totalDownloads = versionList.reduce((sum, v) => sum + v.downloadCount, 0);
+
+    return {
+      ...app,
+      stats: {
+        downloads: totalDownloads,
+        activeUsers: 0,
+        rating: 0,
+        reviews: 0,
+      },
+      versions: versionList.map(v => ({
+        id: v.id,
+        version: v.version,
+        status: v.status,
+        downloads: v.downloadCount,
+        createdAt: v.createdAt,
+      })),
+    };
   });
 
   /**
