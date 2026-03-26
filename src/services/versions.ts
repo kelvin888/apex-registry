@@ -31,6 +31,40 @@ export interface VersionWithDownloads extends Version {
   downloadCount: number;
 }
 
+function validateManifestPermissions(zip: AdmZip): void {
+  const manifestEntry = zip.getEntry('manifest.json');
+  if (!manifestEntry) {
+    throw new Error('Invalid package: missing manifest.json. Build your app with `apex build` first.');
+  }
+
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(zip.readAsText('manifest.json'));
+  } catch {
+    throw new Error('Invalid package: manifest.json is not valid JSON.');
+  }
+
+  if (!manifest || typeof manifest !== 'object') {
+    throw new Error('Invalid package: manifest.json must be a JSON object.');
+  }
+
+  const permissions = (manifest as { permissions?: unknown }).permissions;
+  if (permissions === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(permissions)) {
+    throw new Error('Invalid package: manifest.permissions must be an array of strings.');
+  }
+
+  const invalidIndex = permissions.findIndex((entry) => typeof entry !== 'string');
+  if (invalidIndex !== -1) {
+    throw new Error(
+      `Invalid package: manifest.permissions[${invalidIndex}] must be a string. Object-style permissions are not supported in published manifests.`
+    );
+  }
+}
+
 /**
  * Create a new version
  */
@@ -137,9 +171,7 @@ export async function uploadPackage(
   } catch {
     throw new Error('Package is not a valid ZIP archive');
   }
-  if (!zip.getEntry('manifest.json')) {
-    throw new Error('Invalid package: missing manifest.json. Build your app with `apex build` first.');
-  }
+  validateManifestPermissions(zip);
 
   // Calculate hash
   const hash = crypto.createHash('sha256').update(input.buffer).digest('hex');

@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import AdmZip from 'adm-zip';
 import { initDatabase, closeDatabase, runMigrations } from '../db';
 import * as authService from '../services/auth';
 import * as appsService from '../services/apps';
@@ -112,6 +113,13 @@ describe('Versions Service', () => {
   });
 
   describe('uploadPackage', () => {
+    function makePackageWithManifest(manifest: unknown): Buffer {
+      const zip = new AdmZip();
+      zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest), 'utf-8'));
+      zip.addFile('app.js', Buffer.from('console.log("ok");', 'utf-8'));
+      return zip.toBuffer();
+    }
+
     it('should upload package file', async () => {
       const version = await versionsService.createVersion(appId, developerId, {
         version: '1.0.0',
@@ -192,6 +200,58 @@ describe('Versions Service', () => {
           config
         )
       ).rejects.toThrow('already has a package');
+    });
+
+    it('should reject manifest permissions in object format', async () => {
+      const version = await versionsService.createVersion(appId, developerId, {
+        version: '1.0.0',
+      });
+
+      const buffer = makePackageWithManifest({
+        version: '1.0.0',
+        formatVersion: 1,
+        info: { appId: 'com.example.testapp', name: 'Test App', version: '1.0.0', versionCode: 1 },
+        pages: [{ path: 'pages/index/index', isEntry: true }],
+        permissions: [{ permission: 'storage', reason: 'Save data' }],
+      });
+
+      await expect(
+        versionsService.uploadPackage(
+          version.id,
+          developerId,
+          {
+            buffer,
+            filename: 'package.map',
+          },
+          config
+        )
+      ).rejects.toThrow('manifest.permissions[0] must be a string');
+    });
+
+    it('should accept manifest permissions as string array', async () => {
+      const version = await versionsService.createVersion(appId, developerId, {
+        version: '1.0.0',
+      });
+
+      const buffer = makePackageWithManifest({
+        version: '1.0.0',
+        formatVersion: 1,
+        info: { appId: 'com.example.testapp', name: 'Test App', version: '1.0.0', versionCode: 1 },
+        pages: [{ path: 'pages/index/index', isEntry: true }],
+        permissions: ['storage', 'network'],
+      });
+
+      const updated = await versionsService.uploadPackage(
+        version.id,
+        developerId,
+        {
+          buffer,
+          filename: 'package.map',
+        },
+        config
+      );
+
+      expect(updated.status).toBe('ready');
     });
   });
 
