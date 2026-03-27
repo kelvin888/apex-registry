@@ -229,7 +229,10 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
   fastify.setErrorHandler((error, request, reply) => {
     fastify.log.error(error);
 
-    const statusCode = error.statusCode || 500;
+    // Respect status codes set with reply.code() before a throw, fall back to
+    // error.statusCode (Fastify built-in errors), then default to 500.
+    const presetCode = reply.statusCode >= 400 ? reply.statusCode : undefined;
+    const statusCode = error.statusCode ?? presetCode ?? 500;
     const message = statusCode === 500 && config.nodeEnv === 'production'
       ? 'Internal server error'
       : error.message;
@@ -243,7 +246,7 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
   // Register routes
   await fastify.register(authRoutes, { prefix: '/api/auth' });
   await fastify.register(appsRoutes, { prefix: '/api/apps' });
-  await fastify.register(versionsRoutes, { prefix: '/api/apps' });
+  await fastify.register(versionsRoutes, { prefix: '/api/apps', config });
   await fastify.register(registryRoutes, { prefix: '/api/registry' });
   await fastify.register(dashboardRoutes, { prefix: '/api/dashboard' });
   await fastify.register(adminRoutes, { prefix: '/api/admin' });

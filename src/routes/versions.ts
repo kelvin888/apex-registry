@@ -8,7 +8,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import * as versionsService from '../services/versions';
 import * as appsService from '../services/apps';
-import { loadConfig } from '../config';
+import { type Config } from '../config';
 
 const createVersionSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/),
@@ -17,8 +17,8 @@ const createVersionSchema = z.object({
   permissions: z.array(z.string()).optional(),
 });
 
-export const versionsRoutes: FastifyPluginAsync = async (fastify) => {
-  const config = loadConfig();
+export const versionsRoutes: FastifyPluginAsync<{ config: Config }> = async (fastify, opts) => {
+  const config = opts.config;
 
   /**
    * Create version
@@ -110,8 +110,7 @@ export const versionsRoutes: FastifyPluginAsync = async (fastify) => {
 
       return version;
     } catch (error) {
-      reply.code(400);
-      throw error;
+      reply.code(400).send({ error: (error as Error).message, statusCode: 400 });
     }
   });
 

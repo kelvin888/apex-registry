@@ -20,6 +20,23 @@ describe('Versions Service', () => {
   let appId: string;
   let config: Config;
 
+  function makePackageWithManifest(manifest: unknown): Buffer {
+    const zip = new AdmZip();
+    zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest), 'utf-8'));
+    zip.addFile('app.js', Buffer.from('console.log("ok");', 'utf-8'));
+    return zip.toBuffer();
+  }
+
+  function validPackage(): Buffer {
+    return makePackageWithManifest({
+      version: '1.0.0',
+      formatVersion: 1,
+      info: { appId: 'com.example.testapp', name: 'Test App', version: '1.0.0', versionCode: 1 },
+      pages: [{ path: 'pages/index/index', isEntry: true }],
+      permissions: ['storage'],
+    });
+  }
+
   beforeEach(async () => {
     // Create temp directories
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-server-test-'));
@@ -97,12 +114,15 @@ describe('Versions Service', () => {
       ).rejects.toThrow('Invalid version format');
     });
 
-    it('should reject duplicate versions', async () => {
-      await versionsService.createVersion(appId, developerId, { version: '1.0.0' });
+    it('should replace an existing version with the same number', async () => {
+      const first = await versionsService.createVersion(appId, developerId, { version: '1.0.0' });
+      const second = await versionsService.createVersion(appId, developerId, { version: '1.0.0' });
 
-      await expect(
-        versionsService.createVersion(appId, developerId, { version: '1.0.0' })
-      ).rejects.toThrow('already exists');
+      expect(second.id).not.toBe(first.id);
+      expect(second.version).toBe('1.0.0');
+
+      const allVersions = await versionsService.listVersions(appId);
+      expect(allVersions.length).toBe(1);
     });
 
     it('should reject unauthorized developers', async () => {
@@ -113,31 +133,24 @@ describe('Versions Service', () => {
   });
 
   describe('uploadPackage', () => {
-    function makePackageWithManifest(manifest: unknown): Buffer {
-      const zip = new AdmZip();
-      zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest), 'utf-8'));
-      zip.addFile('app.js', Buffer.from('console.log("ok");', 'utf-8'));
-      return zip.toBuffer();
-    }
-
     it('should upload package file', async () => {
       const version = await versionsService.createVersion(appId, developerId, {
         version: '1.0.0',
       });
 
-      const packageContent = Buffer.from('fake package content');
+      const buffer = validPackage();
       const updated = await versionsService.uploadPackage(
         version.id,
         developerId,
         {
-          buffer: packageContent,
+          buffer,
           filename: 'package.map',
         },
         config
       );
 
       expect(updated.status).toBe('ready');
-      expect(updated.packageSize).toBe(packageContent.length);
+      expect(updated.packageSize).toBe(buffer.length);
       expect(updated.packageHash).toBeDefined();
       expect(updated.packagePath).toBeDefined();
     });
@@ -188,7 +201,7 @@ describe('Versions Service', () => {
       await versionsService.uploadPackage(
         version.id,
         developerId,
-        { buffer: Buffer.from('content'), filename: 'package.map' },
+        { buffer: validPackage(), filename: 'package.map' },
         config
       );
 
@@ -196,7 +209,7 @@ describe('Versions Service', () => {
         versionsService.uploadPackage(
           version.id,
           developerId,
-          { buffer: Buffer.from('content2'), filename: 'package.map' },
+          { buffer: validPackage(), filename: 'package.map' },
           config
         )
       ).rejects.toThrow('already has a package');
@@ -291,7 +304,7 @@ describe('Versions Service', () => {
       await versionsService.uploadPackage(
         v1.id,
         developerId,
-        { buffer: Buffer.from('v1'), filename: 'package.map' },
+        { buffer: validPackage(), filename: 'package.map' },
         config
       );
 
@@ -299,7 +312,7 @@ describe('Versions Service', () => {
       await versionsService.uploadPackage(
         v2.id,
         developerId,
-        { buffer: Buffer.from('v2'), filename: 'package.map' },
+        { buffer: validPackage(), filename: 'package.map' },
         config
       );
 
@@ -327,7 +340,7 @@ describe('Versions Service', () => {
       await versionsService.uploadPackage(
         version.id,
         developerId,
-        { buffer: Buffer.from('content'), filename: 'package.map' },
+        { buffer: validPackage(), filename: 'package.map' },
         config
       );
 
@@ -357,7 +370,7 @@ describe('Versions Service', () => {
       await versionsService.uploadPackage(
         version.id,
         developerId,
-        { buffer: Buffer.from('content'), filename: 'package.map' },
+        { buffer: validPackage(), filename: 'package.map' },
         config
       );
 
