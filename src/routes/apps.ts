@@ -15,6 +15,7 @@ const createAppSchema = z.object({
   description: z.string().max(500).optional(),
   icon: z.string().url().optional(),
   category: z.string().optional(),
+  supportedCountries: z.array(z.string().length(2).toUpperCase()).optional(),
 });
 
 const updateAppSchema = z.object({
@@ -22,6 +23,7 @@ const updateAppSchema = z.object({
   description: z.string().max(500).optional(),
   icon: z.string().url().optional(),
   category: z.string().optional(),
+  supportedCountries: z.array(z.string().length(2).toUpperCase()).optional(),
 });
 
 const listAppsSchema = z.object({

@@ -15,7 +15,12 @@ import { type Config } from './config';
 import { initDatabase, runMigrations, getDatabase, developers } from './db';
 import { getDatabasePath } from './config';
 import * as authService from './services/auth';
-import { authRoutes, appsRoutes, versionsRoutes, registryRoutes, dashboardRoutes, adminRoutes } from './routes';
+import { authRoutes, appsRoutes, versionsRoutes, registryRoutes, dashboardRoutes, adminRoutes, identityRoutes, walletRoutes, creditRoutes, historyRoutes, notificationsRoutes, billsRoutes, transfersRoutes, savingsRoutes, healthRoutes, insuranceRoutes, energyRoutes, transportRoutes, b2bRoutes, fleetRoutes, staffHealthRoutes, crossborderRoutes, invoicingRoutes, embeddedFinanceRoutes, previewRoutes } from './routes';
+import { seedBillers } from './services/bills';
+import { seedHealthData } from './services/health';
+import { seedInsurancePlans } from './services/insurance';
+import { seedEnergyProviders, seedGasVendors } from './services/energy';
+import { seedTransportData } from './services/transport';
 import { eq } from 'drizzle-orm';
 
 // Extend Fastify types
@@ -46,6 +51,12 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
   // Initialize database
   initDatabase({ path: getDatabasePath(config) });
   runMigrations();
+  seedBillers();
+  seedHealthData();
+  seedInsurancePlans();
+  seedEnergyProviders();
+  seedGasVendors();
+  seedTransportData();
 
   // Create Fastify instance
   const fastify = Fastify({
@@ -247,9 +258,28 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
   await fastify.register(authRoutes, { prefix: '/api/auth' });
   await fastify.register(appsRoutes, { prefix: '/api/apps' });
   await fastify.register(versionsRoutes, { prefix: '/api/apps', config });
-  await fastify.register(registryRoutes, { prefix: '/api/registry' });
+  await fastify.register(registryRoutes, { prefix: '/api/registry', config });
   await fastify.register(dashboardRoutes, { prefix: '/api/dashboard' });
   await fastify.register(adminRoutes, { prefix: '/api/admin' });
+  await fastify.register(identityRoutes, { prefix: '/api/identity' });
+  await fastify.register(walletRoutes, { prefix: '/api/wallet' });
+  await fastify.register(creditRoutes, { prefix: '/api/credit' });
+  await fastify.register(historyRoutes, { prefix: '/api/history' });
+  await fastify.register(notificationsRoutes, { prefix: '/api/notifications' });
+  await fastify.register(billsRoutes, { prefix: '/api/bills' });
+  await fastify.register(transfersRoutes, { prefix: '/api/transfers' });
+  await fastify.register(savingsRoutes, { prefix: '/api/savings' });
+  await fastify.register(healthRoutes, { prefix: '/api/health' });
+  await fastify.register(insuranceRoutes, { prefix: '/api/insurance' });
+  await fastify.register(energyRoutes, { prefix: '/api/energy' });
+  await fastify.register(transportRoutes, { prefix: '/api/transport' });
+  await fastify.register(b2bRoutes, { prefix: '/api/b2b' });
+  await fastify.register(fleetRoutes, { prefix: '/api/b2b/fleet' });
+  await fastify.register(staffHealthRoutes, { prefix: '/api/b2b/health' });
+  await fastify.register(crossborderRoutes, { prefix: '/api/b2b/crossborder' });
+  await fastify.register(invoicingRoutes, { prefix: '/api/b2b/invoicing' });
+  await fastify.register(embeddedFinanceRoutes, { prefix: '/api/b2b/finance' });
+  await fastify.register(previewRoutes, { prefix: '/api/preview', config });
 
   return fastify;
 }

@@ -13,6 +13,21 @@ import AdmZip from 'adm-zip';
 import mime from 'mime-types';
 import * as appsService from '../services/apps';
 import * as versionsService from '../services/versions';
+import { getStoragePath, type Config } from '../config';
+
+/**
+ * Resolve a stored icon value to a full URL.
+ * - `local:icon.png`  → `{baseUrl}/api/registry/apps/{appId}/icon`
+ * - `https://...`     → pass-through
+ * - null/undefined    → null
+ */
+function resolveIconUrl(icon: string | null | undefined, appId: string, baseUrl: string): string | null {
+  if (!icon) return null;
+  if (icon.startsWith('local:')) {
+    return `${baseUrl}/api/registry/apps/${appId}/icon`;
+  }
+  return icon;
+}
 
 const searchSchema = z.object({
   q: z.string().optional(),
@@ -21,7 +36,9 @@ const searchSchema = z.object({
   offset: z.coerce.number().min(0).default(0),
 });
 
-export const registryRoutes: FastifyPluginAsync = async (fastify) => {
+export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fastify, opts) => {
+  const config = opts.config;
+
   /**
    * Search public apps
    */
@@ -59,8 +76,9 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
         appId: app.appId,
         name: app.name,
         description: app.description,
-        icon: app.icon,
+        icon: resolveIconUrl(app.icon, app.appId, baseUrl),
         category: app.category,
+        supportedCountries: app.supportedCountries ? JSON.parse(app.supportedCountries) : [],
         latestVersion: app.latestVersion ? {
           version: app.latestVersion.version,
           versionCode: app.latestVersion.versionCode,
@@ -107,8 +125,9 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
       appId: app.appId,
       name: app.name,
       description: app.description,
-      icon: app.icon,
+      icon: resolveIconUrl(app.icon, app.appId, baseUrl),
       category: app.category,
+      supportedCountries: app.supportedCountries ? JSON.parse(app.supportedCountries) : [],
       latestVersion: latestVersion ? {
         version: latestVersion.version,
         versionCode: latestVersion.versionCode,
@@ -319,6 +338,61 @@ export const registryRoutes: FastifyPluginAsync = async (fastify) => {
       .header('Cache-Control', 'no-store, no-cache');
 
     return reply.send(entry.getData());
+  });
+
+  /**
+   * Serve app icon from local storage.
+   * Only responds for apps whose icon was bundled in the .map package
+   * (stored as `local:{filename}` in the DB).
+   */
+  fastify.get('/apps/:appId/icon', {
+    schema: {
+      description: 'Get app icon image',
+      tags: ['registry'],
+      params: {
+        type: 'object',
+        required: ['appId'],
+        properties: {
+          appId: { type: 'string' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { appId } = request.params as { appId: string };
+
+    const app = await appsService.getAppByAppId(appId);
+    if (!app) {
+      reply.code(404);
+      throw new Error('App not found');
+    }
+
+    if (!app.icon?.startsWith('local:')) {
+      reply.code(404);
+      throw new Error('No bundled icon');
+    }
+
+    const iconFilename = app.icon.slice('local:'.length);
+    // Sanitize: only allow simple filenames like "icon.png"
+    if (iconFilename.includes('/') || iconFilename.includes('\\') || iconFilename.includes('..')) {
+      reply.code(400);
+      throw new Error('Invalid icon reference');
+    }
+
+    const iconPath = path.join(getStoragePath(config, app.appId), iconFilename);
+    if (!fs.existsSync(iconPath)) {
+      reply.code(404);
+      throw new Error('Icon file not found');
+    }
+
+    const contentType = mime.lookup(iconFilename) || 'image/png';
+    const stream = fs.createReadStream(iconPath);
+
+    reply
+      .header('Content-Type', contentType)
+      .header('Cache-Control', 'public, max-age=86400')
+      .header('Access-Control-Allow-Origin', '*');
+
+    return reply.send(stream);
   });
 
   /**

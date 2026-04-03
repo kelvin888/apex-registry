@@ -1,6 +1,6 @@
 {
   "name": "@qt-test/apex-server",
-  "version": "0.1.0",
+  "version": "0.18.1",
   "private": false,
   "description": "APEX mini-app distribution server - package hosting, signing, and delivery",
   "repository": {

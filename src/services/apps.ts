@@ -14,6 +14,7 @@ export interface CreateAppInput {
   description?: string;
   icon?: string;
   category?: string;
+  supportedCountries?: string[];
 }
 
 export interface UpdateAppInput {
@@ -21,6 +22,7 @@ export interface UpdateAppInput {
   description?: string;
   icon?: string;
   category?: string;
+  supportedCountries?: string[];
 }
 
 export interface ListAppsOptions {
@@ -64,6 +66,7 @@ export async function createApp(developerId: string, input: CreateAppInput): Pro
     description: input.description,
     icon: input.icon,
     category: input.category,
+    supportedCountries: input.supportedCountries ? JSON.stringify(input.supportedCountries) : undefined,
     status: 'draft',
     isPublic: false,
     createdAt: now,
@@ -124,9 +127,11 @@ export async function updateApp(id: string, developerId: string, input: UpdateAp
     throw new Error('App not found or access denied');
   }
 
+  const { supportedCountries, ...rest } = input;
   const updated = await db.update(apps)
     .set({
-      ...input,
+      ...rest,
+      ...(supportedCountries !== undefined && { supportedCountries: JSON.stringify(supportedCountries) }),
       updatedAt: new Date(),
     })
     .where(eq(apps.id, id))

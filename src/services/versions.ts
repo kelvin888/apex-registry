@@ -200,6 +200,9 @@ export async function uploadPackage(
   // Process package (in production, this would be a background job)
   await processPackage(versionId);
 
+  // Extract and store icon from package if manifest contains a bundled icon path
+  await extractAndStoreIcon(zip, app, config);
+
   // Re-fetch the version to return the final status set by processPackage
   const processed = await db.select().from(versions).where(eq(versions.id, versionId)).get();
   return processed as Version;
@@ -232,6 +235,66 @@ async function processPackage(versionId: string): Promise<void> {
       .where(eq(versions.id, versionId));
     throw error;
   }
+}
+
+const ICON_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+
+/**
+ * Extract bundled icon from .map package and store it alongside the app.
+ * If manifest.info.icon is a relative file path (not a URL), the icon file
+ * is pulled from the ZIP archive, stored on disk at
+ * {storagePath}/{appId}/icon.{ext}, and the app DB row is updated so
+ * registry endpoints return a deterministic icon URL.
+ */
+async function extractAndStoreIcon(
+  zip: AdmZip,
+  app: { id: string; appId: string },
+  config: Config,
+): Promise<void> {
+  const manifestEntry = zip.getEntry('manifest.json');
+  if (!manifestEntry) return;
+
+  let manifest: { info?: { icon?: string } };
+  try {
+    manifest = JSON.parse(zip.readAsText('manifest.json'));
+  } catch {
+    return;
+  }
+
+  const iconRef = manifest?.info?.icon;
+  if (!iconRef) return;
+
+  // If it's an absolute URL already, just store the URL in the DB
+  if (/^https?:\/\//i.test(iconRef)) {
+    const db = getDatabase();
+    await db.update(apps)
+      .set({ icon: iconRef, updatedAt: new Date() })
+      .where(eq(apps.id, app.id));
+    return;
+  }
+
+  // Bundled icon — extract from ZIP
+  const ext = path.extname(iconRef).toLowerCase();
+  if (!ICON_EXTENSIONS.has(ext)) return;
+
+  const iconEntry = zip.getEntry(iconRef);
+  if (!iconEntry) return;
+
+  const iconData = iconEntry.getData();
+  const iconDir = getStoragePath(config, app.appId);
+  const iconFilename = `icon${ext}`;
+  const iconPath = path.join(iconDir, iconFilename);
+
+  if (!fs.existsSync(iconDir)) {
+    fs.mkdirSync(iconDir, { recursive: true });
+  }
+  fs.writeFileSync(iconPath, iconData);
+
+  // Store a sentinel value; the registry route will build the full URL per-request
+  const db = getDatabase();
+  await db.update(apps)
+    .set({ icon: `local:${iconFilename}`, updatedAt: new Date() })
+    .where(eq(apps.id, app.id));
 }
 
 /**
