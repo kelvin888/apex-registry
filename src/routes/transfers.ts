@@ -37,7 +37,12 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'List supported banks',
       tags: ['transfers'],
-      querystring: z.object({ country: z.string().default('NG') }),
+      querystring: {
+        type: 'object',
+        properties: {
+          country: { type: 'string', default: 'NG' },
+        },
+      },
     },
   }, async (request) => {
     const { country } = request.query as { country: string };
@@ -53,9 +58,13 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Look up wallet recipient by phone or email',
       tags: ['transfers'],
-      body: z.object({
-        identifier: z.string().min(3),
-      }),
+      body: {
+        type: 'object',
+        required: ['identifier'],
+        properties: {
+          identifier: { type: 'string', minLength: 3 },
+        },
+      },
     },
   }, async (request, reply) => {
     const { identifier } = request.body as { identifier: string };
@@ -69,10 +78,14 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Name enquiry for bank account',
       tags: ['transfers'],
-      body: z.object({
-        bankCode: z.string().length(3),
-        accountNumber: z.string().length(10),
-      }),
+      body: {
+        type: 'object',
+        required: ['bankCode', 'accountNumber'],
+        properties: {
+          bankCode: { type: 'string', minLength: 3, maxLength: 3 },
+          accountNumber: { type: 'string', minLength: 10, maxLength: 10 },
+        },
+      },
     },
   }, async (request) => {
     const { bankCode, accountNumber } = request.body as { bankCode: string; accountNumber: string };
@@ -88,13 +101,17 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Send money to an Apex wallet',
       tags: ['transfers'],
-      body: z.object({
-        recipientId: z.string(),
-        amount: z.number().int().positive(),
-        currency: z.string().default('NGN'),
-        narration: z.string().optional(),
-        saveBeneficiary: z.boolean().default(false),
-      }),
+      body: {
+        type: 'object',
+        required: ['recipientId', 'amount'],
+        properties: {
+          recipientId: { type: 'string' },
+          amount: { type: 'integer', minimum: 1 },
+          currency: { type: 'string', default: 'NGN' },
+          narration: { type: 'string' },
+          saveBeneficiary: { type: 'boolean', default: false },
+        },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -111,15 +128,19 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Send money to a bank account',
       tags: ['transfers'],
-      body: z.object({
-        bankCode: z.string().length(3),
-        accountNumber: z.string().length(10),
-        accountName: z.string(),
-        amount: z.number().int().positive(),
-        currency: z.string().default('NGN'),
-        narration: z.string().optional(),
-        saveBeneficiary: z.boolean().default(false),
-      }),
+      body: {
+        type: 'object',
+        required: ['bankCode', 'accountNumber', 'accountName', 'amount'],
+        properties: {
+          bankCode: { type: 'string', minLength: 3, maxLength: 3 },
+          accountNumber: { type: 'string', minLength: 10, maxLength: 10 },
+          accountName: { type: 'string' },
+          amount: { type: 'integer', minimum: 1 },
+          currency: { type: 'string', default: 'NGN' },
+          narration: { type: 'string' },
+          saveBeneficiary: { type: 'boolean', default: false },
+        },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -140,10 +161,13 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Get transfer history',
       tags: ['transfers'],
-      querystring: z.object({
-        limit: z.coerce.number().int().min(1).max(100).default(20),
-        offset: z.coerce.number().int().min(0).default(0),
-      }),
+      querystring: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
     },
   }, async (request) => {
     const { limit, offset } = request.query as { limit: number; offset: number };
@@ -159,10 +183,13 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Get saved beneficiaries',
       tags: ['transfers'],
-      querystring: z.object({
-        type: z.enum(['wallet', 'bank']).optional(),
-        search: z.string().optional(),
-      }),
+      querystring: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['wallet', 'bank'] },
+          search: { type: 'string' },
+        },
+      },
     },
   }, async (request) => {
     const query = request.query as { type?: 'wallet' | 'bank'; search?: string };
@@ -174,14 +201,18 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Save a beneficiary',
       tags: ['transfers'],
-      body: z.object({
-        type: z.enum(['wallet', 'bank']),
-        accountId: z.string(),
-        accountName: z.string(),
-        bankCode: z.string().optional(),
-        bankName: z.string().optional(),
-        alias: z.string().optional(),
-      }),
+      body: {
+        type: 'object',
+        required: ['type', 'accountId', 'accountName'],
+        properties: {
+          type: { type: 'string', enum: ['wallet', 'bank'] },
+          accountId: { type: 'string' },
+          accountName: { type: 'string' },
+          bankCode: { type: 'string' },
+          bankName: { type: 'string' },
+          alias: { type: 'string' },
+        },
+      },
     },
   }, async (request, reply) => {
     const body = request.body as any;
@@ -194,7 +225,13 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Delete a beneficiary',
       tags: ['transfers'],
-      params: z.object({ id: z.string() }),
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string' },
+        },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -224,7 +261,13 @@ export const transfersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Parse a scanned QR payload',
       tags: ['transfers'],
-      body: z.object({ payload: z.string() }),
+      body: {
+        type: 'object',
+        required: ['payload'],
+        properties: {
+          payload: { type: 'string' },
+        },
+      },
     },
   }, async (request, reply) => {
     const { payload } = request.body as { payload: string };

@@ -48,15 +48,19 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Create a new savings goal',
       tags: ['savings'],
-      body: z.object({
-        name: z.string().min(1).max(100),
-        targetAmount: z.number().int().positive(),
-        currency: z.string().default('NGN'),
-        deadline: z.number().int().optional(),
-        locked: z.boolean().default(false),
-        autoDeductFrequency: z.enum(['none', 'daily', 'weekly', 'monthly']).default('none'),
-        autoDeductAmount: z.number().int().positive().optional(),
-      }),
+      body: {
+        type: 'object',
+        required: ['name', 'targetAmount'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          targetAmount: { type: 'integer', minimum: 1 },
+          currency: { type: 'string', default: 'NGN' },
+          deadline: { type: 'integer' },
+          locked: { type: 'boolean', default: false },
+          autoDeductFrequency: { type: 'string', enum: ['none', 'daily', 'weekly', 'monthly'], default: 'none' },
+          autoDeductAmount: { type: 'integer', minimum: 1 },
+        },
+      },
     },
   }, async (request, reply) => {
     const body = request.body as any;
@@ -69,7 +73,11 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Get savings goal detail with transactions',
       tags: ['savings'],
-      params: z.object({ goalId: z.string() }),
+      params: {
+        type: 'object',
+        required: ['goalId'],
+        properties: { goalId: { type: 'string' } },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -85,10 +93,16 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Deposit to a savings goal',
       tags: ['savings'],
-      params: z.object({ goalId: z.string() }),
-      body: z.object({
-        amount: z.number().int().positive(),
-      }),
+      params: {
+        type: 'object',
+        required: ['goalId'],
+        properties: { goalId: { type: 'string' } },
+      },
+      body: {
+        type: 'object',
+        required: ['amount'],
+        properties: { amount: { type: 'integer', minimum: 1 } },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -106,10 +120,16 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Withdraw from a savings goal',
       tags: ['savings'],
-      params: z.object({ goalId: z.string() }),
-      body: z.object({
-        amount: z.number().int().positive(),
-      }),
+      params: {
+        type: 'object',
+        required: ['goalId'],
+        properties: { goalId: { type: 'string' } },
+      },
+      body: {
+        type: 'object',
+        required: ['amount'],
+        properties: { amount: { type: 'integer', minimum: 1 } },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -127,7 +147,11 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Cancel an empty savings goal',
       tags: ['savings'],
-      params: z.object({ goalId: z.string() }),
+      params: {
+        type: 'object',
+        required: ['goalId'],
+        properties: { goalId: { type: 'string' } },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -157,13 +181,17 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Create an ajo/esusu group',
       tags: ['savings'],
-      body: z.object({
-        name: z.string().min(1).max(100),
-        contributionAmount: z.number().int().positive(),
-        currency: z.string().default('NGN'),
-        frequency: z.enum(['daily', 'weekly', 'biweekly', 'monthly']),
-        maxMembers: z.number().int().min(2).max(30),
-      }),
+      body: {
+        type: 'object',
+        required: ['name', 'contributionAmount', 'frequency', 'maxMembers'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          contributionAmount: { type: 'integer', minimum: 1 },
+          currency: { type: 'string', default: 'NGN' },
+          frequency: { type: 'string', enum: ['daily', 'weekly', 'biweekly', 'monthly'] },
+          maxMembers: { type: 'integer', minimum: 2, maximum: 30 },
+        },
+      },
     },
   }, async (request, reply) => {
     const body = request.body as any;
@@ -176,7 +204,11 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Get ajo group detail',
       tags: ['savings'],
-      params: z.object({ groupId: z.string() }),
+      params: {
+        type: 'object',
+        required: ['groupId'],
+        properties: { groupId: { type: 'string' } },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -192,9 +224,13 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Join an ajo group via invite code',
       tags: ['savings'],
-      body: z.object({
-        inviteCode: z.string().min(4).max(20),
-      }),
+      body: {
+        type: 'object',
+        required: ['inviteCode'],
+        properties: {
+          inviteCode: { type: 'string', minLength: 4, maxLength: 20 },
+        },
+      },
     },
   }, async (request, reply) => {
     try {
@@ -211,7 +247,11 @@ export const savingsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       description: 'Make contribution to current round',
       tags: ['savings'],
-      params: z.object({ groupId: z.string() }),
+      params: {
+        type: 'object',
+        required: ['groupId'],
+        properties: { groupId: { type: 'string' } },
+      },
     },
   }, async (request, reply) => {
     try {

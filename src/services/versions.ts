@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as semver from 'semver';
 import AdmZip from 'adm-zip';
-import { getDatabase, versions, apps, downloads, reviews, type Version, type NewVersion } from '../db';
+import { getDatabase, versions, apps, downloads, reviews, certificates, type Version, type NewVersion } from '../db';
 import { getStoragePath, type Config } from '../config';
 
 export interface CreateVersionInput {
@@ -29,6 +29,23 @@ export interface UploadPackageInput {
 
 export interface VersionWithDownloads extends Version {
   downloadCount: number;
+}
+
+/**
+ * Recomputes the content hash of a package exactly as the CLI does:
+ * SHA-256 of all (entryName + data) pairs, sorted by name,
+ * excluding manifest.json and signature.sig.
+ */
+function recomputeContentHash(zip: AdmZip): string {
+  const hash = crypto.createHash('sha256');
+  const entries = zip.getEntries()
+    .filter(e => !e.isDirectory && e.entryName !== 'manifest.json' && e.entryName !== 'signature.sig')
+    .sort((a, b) => a.entryName.localeCompare(b.entryName));
+  for (const entry of entries) {
+    hash.update(entry.entryName);
+    hash.update(entry.getData());
+  }
+  return hash.digest('hex');
 }
 
 function validateManifestPermissions(zip: AdmZip): void {
@@ -173,6 +190,60 @@ export async function uploadPackage(
   }
   validateManifestPermissions(zip);
 
+  // ── Signature verification ────────────────────────────────────────────────
+  let signatureToStore: string | null = null;
+  const sigEntry = zip.getEntry('signature.sig');
+  if (sigEntry) {
+    let sigData: { algorithm?: string; keyId?: string; timestamp?: string; contentHash?: string; signature?: string } | undefined;
+    try {
+      sigData = JSON.parse(sigEntry.getData().toString('utf-8'));
+    } catch {
+      throw new Error('Package signature.sig is not valid JSON');
+    }
+    if (!sigData || typeof sigData.signature !== 'string' || typeof sigData.contentHash !== 'string') {
+      throw new Error('Package signature.sig is malformed: missing signature or contentHash fields');
+    }
+
+    // Recompute content hash from ZIP to detect tampering
+    const computedHash = recomputeContentHash(zip);
+
+    // Look up the developer's registered, non-expired certificates
+    const now = new Date();
+    const devCerts = await db.select().from(certificates)
+      .where(eq(certificates.developerId, developerId));
+    const activeCerts = devCerts.filter(c => !c.expiresAt || c.expiresAt > now);
+
+    if (activeCerts.length === 0) {
+      throw new Error(
+        'Package is signed but no certificates are registered. ' +
+        'Register your public key first with `apex keys register`.',
+      );
+    }
+
+    let verified = false;
+    for (const cert of activeCerts) {
+      try {
+        const verifier = crypto.createVerify('SHA256');
+        verifier.update(computedHash);
+        if (verifier.verify(cert.publicKey, sigData.signature, 'base64')) {
+          verified = true;
+          break;
+        }
+      } catch {
+        // Bad key format or algorithm mismatch — try the next cert
+      }
+    }
+
+    if (!verified) {
+      throw new Error(
+        'Package signature verification failed: ' +
+        'signature does not match any registered certificate.',
+      );
+    }
+
+    signatureToStore = JSON.stringify(sigData);
+  }
+
   // Calculate hash
   const hash = crypto.createHash('sha256').update(input.buffer).digest('hex');
 
@@ -192,6 +263,7 @@ export async function uploadPackage(
       packagePath,
       packageSize: input.buffer.length,
       packageHash: hash,
+      signature: signatureToStore,
       metadata: input.metadata ? JSON.stringify(input.metadata) : null,
     })
     .where(eq(versions.id, versionId))
