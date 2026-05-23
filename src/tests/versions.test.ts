@@ -13,8 +13,9 @@ import * as appsService from '../services/apps';
 import * as versionsService from '../services/versions';
 import { type Config } from '../config';
 
+const TEST_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://localhost/apex_test';
+
 describe('Versions Service', () => {
-  let dbPath: string;
   let tempDir: string;
   let developerId: string;
   let appId: string;
@@ -38,19 +39,18 @@ describe('Versions Service', () => {
   }
 
   beforeEach(async () => {
-    // Create temp directories
+    // Create temp directories for package storage
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-server-test-'));
-    dbPath = path.join(tempDir, 'test.db');
     const storagePath = path.join(tempDir, 'packages');
 
-    initDatabase({ path: dbPath });
-    runMigrations();
+    initDatabase(TEST_DATABASE_URL);
+    await runMigrations();
 
     config = {
       host: '0.0.0.0',
       port: 4000,
       nodeEnv: 'test',
-      databasePath: dbPath,
+      databaseUrl: TEST_DATABASE_URL,
       jwtSecret: 'test-secret-key-for-testing-only!',
       jwtExpiresIn: '7d',
       storagePath,
@@ -76,8 +76,8 @@ describe('Versions Service', () => {
     appId = app.id;
   });
 
-  afterEach(() => {
-    closeDatabase();
+  afterEach(async () => {
+    await closeDatabase();
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

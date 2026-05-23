@@ -50,7 +50,7 @@
     "@fastify/swagger-ui": "^3.0.0",
     "adm-zip": "^0.5.16",
     "bcrypt": "^5.1.0",
-    "better-sqlite3": "^12.8.0",
+    "postgres": "^3.4.4",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.29.0",
     "fastify": "^4.26.0",
@@ -64,7 +64,6 @@
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
     "@types/bcrypt": "^5.0.2",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^20.0.0",
     "@types/semver": "^7.5.8",

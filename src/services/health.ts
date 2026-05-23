@@ -79,23 +79,23 @@ const LAB_TEST_SEED = [
 /**
  * Seed health providers and lab tests into the database
  */
-export function seedHealthData(): void {
+export async function seedHealthData(): Promise<void> {
   const db = getDatabase();
   const now = new Date();
 
   for (const p of PROVIDER_SEED) {
-    const existing = db.select({ id: healthProviders.id }).from(healthProviders)
-      .where(eq(healthProviders.id, p.id)).get();
+    const [existing] = await db.select({ id: healthProviders.id }).from(healthProviders)
+      .where(eq(healthProviders.id, p.id)).limit(1);
     if (!existing) {
-      db.insert(healthProviders).values({ ...p, createdAt: now, updatedAt: now }).run();
+      await db.insert(healthProviders).values({ ...p, createdAt: now, updatedAt: now });
     }
   }
 
   for (const t of LAB_TEST_SEED) {
-    const existing = db.select({ id: labTests.id }).from(labTests)
-      .where(eq(labTests.id, t.id)).get();
+    const [existing] = await db.select({ id: labTests.id }).from(labTests)
+      .where(eq(labTests.id, t.id)).limit(1);
     if (!existing) {
-      db.insert(labTests).values(t).run();
+      await db.insert(labTests).values(t);
     }
   }
 }
@@ -125,7 +125,7 @@ export function getSpecialties() {
 // PROVIDERS
 // =============================================================================
 
-export function getProviders(opts: {
+export async function getProviders(opts: {
   type?: string;
   specialty?: string;
   city?: string;
@@ -145,20 +145,20 @@ export function getProviders(opts: {
   if (opts.availableNow) conditions.push(eq(healthProviders.availableNow, true));
   if (opts.search) conditions.push(like(healthProviders.name, `%${opts.search}%`));
 
-  const providers = db.select().from(healthProviders)
+  const providers = await db.select().from(healthProviders)
     .where(and(...conditions))
     .orderBy(desc(healthProviders.rating))
     .limit(opts.limit || 20)
-    .offset(opts.offset || 0)
-    .all();
+    .offset(opts.offset || 0);
 
   return providers;
 }
 
-export function getProvider(id: string) {
+export async function getProvider(id: string) {
   const db = getDatabase();
-  return db.select().from(healthProviders)
-    .where(eq(healthProviders.id, id)).get();
+  const [row] = await db.select().from(healthProviders)
+    .where(eq(healthProviders.id, id)).limit(1);
+  return row ?? null;
 }
 
 // =============================================================================
@@ -175,28 +175,28 @@ export async function bookAppointment(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const provider = db.select().from(healthProviders)
-    .where(eq(healthProviders.id, data.providerId)).get();
+  const [provider] = await db.select().from(healthProviders)
+    .where(eq(healthProviders.id, data.providerId)).limit(1);
   if (!provider) throw new Error('Provider not found');
 
   const fee = provider.consultationFee || 0;
 
   // Debit wallet
-  const wallet = db.select().from(wallets)
-    .where(eq(wallets.userId, data.patientId)).get();
+  const [wallet] = await db.select().from(wallets)
+    .where(eq(wallets.userId, data.patientId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < fee) throw new Error('Insufficient balance');
 
   const appointmentId = nanoid();
   const txRef = `APT-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - fee,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -207,9 +207,9 @@ export async function bookAppointment(data: {
     status: 'completed',
     metadata: JSON.stringify({ appointmentId, providerId: provider.id }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -217,9 +217,9 @@ export async function bookAppointment(data: {
     amount: fee,
     balanceAfter: wallet.balance - fee,
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(appointments).values({
+  await db.insert(appointments).values({
     id: appointmentId,
     patientId: data.patientId,
     providerId: data.providerId,
@@ -232,7 +232,7 @@ export async function bookAppointment(data: {
     status: 'confirmed',
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
 
   // Receipt
   const receiptId = await createReceipt({
@@ -260,7 +260,7 @@ export async function bookAppointment(data: {
   return { appointmentId, transactionRef: txRef, receiptId, fee };
 }
 
-export function getAppointments(patientId: string, status?: string) {
+export async function getAppointments(patientId: string, status?: string) {
   const db = getDatabase();
   const conditions: any[] = [eq(appointments.patientId, patientId)];
   if (status) conditions.push(eq(appointments.status, status as any));
@@ -273,13 +273,12 @@ export function getAppointments(patientId: string, status?: string) {
   }).from(appointments)
     .innerJoin(healthProviders, eq(appointments.providerId, healthProviders.id))
     .where(and(...conditions))
-    .orderBy(desc(appointments.scheduledAt))
-    .all();
+    .orderBy(desc(appointments.scheduledAt));
 }
 
-export function getAppointment(id: string) {
+export async function getAppointment(id: string) {
   const db = getDatabase();
-  return db.select({
+  const [row] = await db.select({
     appointment: appointments,
     providerName: healthProviders.name,
     providerType: healthProviders.type,
@@ -287,30 +286,31 @@ export function getAppointment(id: string) {
     providerPhone: healthProviders.phone,
   }).from(appointments)
     .innerJoin(healthProviders, eq(appointments.providerId, healthProviders.id))
-    .where(eq(appointments.id, id)).get();
+    .where(eq(appointments.id, id)).limit(1);
+  return row ?? null;
 }
 
 export async function cancelAppointment(appointmentId: string, userId: string, reason?: string) {
   const db = getDatabase();
   const now = new Date();
 
-  const apt = db.select().from(appointments)
-    .where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, userId))).get();
+  const [apt] = await db.select().from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, userId))).limit(1);
   if (!apt) throw new Error('Appointment not found');
   if (apt.status === 'completed' || apt.status === 'cancelled') {
     throw new Error('Cannot cancel this appointment');
   }
 
   // Refund to wallet
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, userId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
   if (wallet && apt.consultationFee > 0) {
-    db.update(wallets).set({
+    await db.update(wallets).set({
       balance: wallet.balance + apt.consultationFee,
       updatedAt: now,
-    }).where(eq(wallets.id, wallet.id)).run();
+    }).where(eq(wallets.id, wallet.id));
 
     const txId = nanoid();
-    db.insert(walletTransactions).values({
+    await db.insert(walletTransactions).values({
       id: txId,
       walletId: wallet.id,
       type: 'refund',
@@ -321,9 +321,9 @@ export async function cancelAppointment(appointmentId: string, userId: string, r
       status: 'completed',
       metadata: JSON.stringify({ appointmentId }),
       createdAt: now,
-    }).run();
+    });
 
-    db.insert(ledgerEntries).values({
+    await db.insert(ledgerEntries).values({
       id: nanoid(),
       transactionId: txId,
       walletId: wallet.id,
@@ -331,14 +331,14 @@ export async function cancelAppointment(appointmentId: string, userId: string, r
       amount: apt.consultationFee,
       balanceAfter: wallet.balance + apt.consultationFee,
       createdAt: now,
-    }).run();
+    });
   }
 
-  db.update(appointments).set({
+  await db.update(appointments).set({
     status: 'cancelled',
     cancellationReason: reason || null,
     updatedAt: now,
-  }).where(eq(appointments.id, appointmentId)).run();
+  }).where(eq(appointments.id, appointmentId));
 
   await createNotification({
     userId,
@@ -355,35 +355,35 @@ export async function cancelAppointment(appointmentId: string, userId: string, r
 // CONSULTATIONS
 // =============================================================================
 
-export function startConsultation(appointmentId: string, userId: string) {
+export async function startConsultation(appointmentId: string, userId: string) {
   const db = getDatabase();
   const now = new Date();
 
-  const apt = db.select().from(appointments)
-    .where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, userId))).get();
+  const [apt] = await db.select().from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, userId))).limit(1);
   if (!apt) throw new Error('Appointment not found');
   if (apt.status !== 'confirmed') throw new Error('Appointment not in a startable state');
 
   const consultationId = nanoid();
 
-  db.insert(consultations).values({
+  await db.insert(consultations).values({
     id: consultationId,
     appointmentId,
     patientId: userId,
     providerId: apt.providerId,
     status: 'active',
     startedAt: now,
-  }).run();
+  });
 
-  db.update(appointments).set({
+  await db.update(appointments).set({
     status: 'in_progress',
     updatedAt: now,
-  }).where(eq(appointments.id, appointmentId)).run();
+  }).where(eq(appointments.id, appointmentId));
 
   return { consultationId };
 }
 
-export function sendMessage(data: {
+export async function sendMessage(data: {
   consultationId: string;
   senderId: string;
   senderRole: 'patient' | 'doctor';
@@ -394,7 +394,7 @@ export function sendMessage(data: {
   const db = getDatabase();
   const msgId = nanoid();
 
-  db.insert(consultationMessages).values({
+  await db.insert(consultationMessages).values({
     id: msgId,
     consultationId: data.consultationId,
     senderId: data.senderId,
@@ -403,37 +403,36 @@ export function sendMessage(data: {
     content: data.content,
     mediaUrl: data.mediaUrl || null,
     createdAt: new Date(),
-  }).run();
+  });
 
   return { messageId: msgId };
 }
 
-export function getMessages(consultationId: string) {
+export async function getMessages(consultationId: string) {
   const db = getDatabase();
   return db.select().from(consultationMessages)
     .where(eq(consultationMessages.consultationId, consultationId))
-    .orderBy(asc(consultationMessages.createdAt))
-    .all();
+    .orderBy(asc(consultationMessages.createdAt));
 }
 
-export function endConsultation(consultationId: string, summary?: string) {
+export async function endConsultation(consultationId: string, summary?: string) {
   const db = getDatabase();
   const now = new Date();
 
-  const consultation = db.select().from(consultations)
-    .where(eq(consultations.id, consultationId)).get();
+  const [consultation] = await db.select().from(consultations)
+    .where(eq(consultations.id, consultationId)).limit(1);
   if (!consultation) throw new Error('Consultation not found');
 
-  db.update(consultations).set({
+  await db.update(consultations).set({
     status: 'ended',
     endedAt: now,
     summary: summary || null,
-  }).where(eq(consultations.id, consultationId)).run();
+  }).where(eq(consultations.id, consultationId));
 
-  db.update(appointments).set({
+  await db.update(appointments).set({
     status: 'completed',
     updatedAt: now,
-  }).where(eq(appointments.id, consultation.appointmentId)).run();
+  }).where(eq(appointments.id, consultation.appointmentId));
 
   return { ended: true };
 }
@@ -459,13 +458,13 @@ export async function createPrescription(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const consultation = db.select().from(consultations)
-    .where(eq(consultations.id, data.consultationId)).get();
+  const [consultation] = await db.select().from(consultations)
+    .where(eq(consultations.id, data.consultationId)).limit(1);
   if (!consultation) throw new Error('Consultation not found');
 
   const prescriptionId = nanoid();
 
-  db.insert(prescriptions).values({
+  await db.insert(prescriptions).values({
     id: prescriptionId,
     consultationId: data.consultationId,
     patientId: consultation.patientId,
@@ -474,10 +473,10 @@ export async function createPrescription(data: {
     notes: data.notes || null,
     status: 'active',
     createdAt: now,
-  }).run();
+  });
 
   for (const item of data.items) {
-    db.insert(prescriptionItems).values({
+    await db.insert(prescriptionItems).values({
       id: nanoid(),
       prescriptionId,
       medicineName: item.medicineName,
@@ -486,7 +485,7 @@ export async function createPrescription(data: {
       duration: item.duration,
       quantity: item.quantity,
       notes: item.notes || null,
-    }).run();
+    });
   }
 
   const receiptId = await createReceipt({
@@ -501,7 +500,7 @@ export async function createPrescription(data: {
     metadata: { prescriptionId, diagnosis: data.diagnosis, itemCount: data.items.length },
   });
 
-  db.update(prescriptions).set({ receiptId }).where(eq(prescriptions.id, prescriptionId)).run();
+  await db.update(prescriptions).set({ receiptId }).where(eq(prescriptions.id, prescriptionId));
 
   await createNotification({
     userId: consultation.patientId,
@@ -514,19 +513,19 @@ export async function createPrescription(data: {
   return { prescriptionId, receiptId };
 }
 
-export function getPrescription(id: string) {
+export async function getPrescription(id: string) {
   const db = getDatabase();
-  const rx = db.select().from(prescriptions)
-    .where(eq(prescriptions.id, id)).get();
+  const [rx] = await db.select().from(prescriptions)
+    .where(eq(prescriptions.id, id)).limit(1);
   if (!rx) return null;
 
-  const items = db.select().from(prescriptionItems)
-    .where(eq(prescriptionItems.prescriptionId, id)).all();
+  const items = await db.select().from(prescriptionItems)
+    .where(eq(prescriptionItems.prescriptionId, id));
 
   return { ...rx, items };
 }
 
-export function getPatientPrescriptions(patientId: string) {
+export async function getPatientPrescriptions(patientId: string) {
   const db = getDatabase();
   return db.select({
     prescription: prescriptions,
@@ -534,8 +533,7 @@ export function getPatientPrescriptions(patientId: string) {
   }).from(prescriptions)
     .innerJoin(healthProviders, eq(prescriptions.providerId, healthProviders.id))
     .where(eq(prescriptions.patientId, patientId))
-    .orderBy(desc(prescriptions.createdAt))
-    .all();
+    .orderBy(desc(prescriptions.createdAt));
 }
 
 // =============================================================================
@@ -558,20 +556,20 @@ export async function createPharmacyOrder(data: {
   const total = subtotal + deliveryFee;
 
   // Debit wallet
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, data.patientId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, data.patientId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < total) throw new Error('Insufficient balance');
 
   const orderId = nanoid();
   const txRef = `PHARM-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - total,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -582,9 +580,9 @@ export async function createPharmacyOrder(data: {
     status: 'completed',
     metadata: JSON.stringify({ orderId }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -592,9 +590,9 @@ export async function createPharmacyOrder(data: {
     amount: total,
     balanceAfter: wallet.balance - total,
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(pharmacyOrders).values({
+  await db.insert(pharmacyOrders).values({
     id: orderId,
     patientId: data.patientId,
     pharmacyId: data.pharmacyId,
@@ -609,23 +607,23 @@ export async function createPharmacyOrder(data: {
     status: 'confirmed',
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
 
   for (const item of data.items) {
-    db.insert(pharmacyOrderItems).values({
+    await db.insert(pharmacyOrderItems).values({
       id: nanoid(),
       orderId,
       medicineName: item.medicineName,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       total: item.unitPrice * item.quantity,
-    }).run();
+    });
   }
 
   // Mark prescription as fulfilled if provided
   if (data.prescriptionId) {
-    db.update(prescriptions).set({ status: 'fulfilled' })
-      .where(eq(prescriptions.id, data.prescriptionId)).run();
+    await db.update(prescriptions).set({ status: 'fulfilled' })
+      .where(eq(prescriptions.id, data.prescriptionId));
   }
 
   const receiptId = await createReceipt({
@@ -640,7 +638,7 @@ export async function createPharmacyOrder(data: {
     metadata: { orderId, itemCount: data.items.length, deliveryMethod: data.deliveryMethod },
   });
 
-  db.update(pharmacyOrders).set({ receiptId }).where(eq(pharmacyOrders.id, orderId)).run();
+  await db.update(pharmacyOrders).set({ receiptId }).where(eq(pharmacyOrders.id, orderId));
 
   await createNotification({
     userId: data.patientId,
@@ -653,23 +651,23 @@ export async function createPharmacyOrder(data: {
   return { orderId, transactionRef: txRef, receiptId, total };
 }
 
-export function getPharmacyOrder(orderId: string) {
+export async function getPharmacyOrder(orderId: string) {
   const db = getDatabase();
-  const order = db.select({
+  const [order] = await db.select({
     order: pharmacyOrders,
     pharmacyName: healthProviders.name,
   }).from(pharmacyOrders)
     .innerJoin(healthProviders, eq(pharmacyOrders.pharmacyId, healthProviders.id))
-    .where(eq(pharmacyOrders.id, orderId)).get();
+    .where(eq(pharmacyOrders.id, orderId)).limit(1);
   if (!order) return null;
 
-  const items = db.select().from(pharmacyOrderItems)
-    .where(eq(pharmacyOrderItems.orderId, orderId)).all();
+  const items = await db.select().from(pharmacyOrderItems)
+    .where(eq(pharmacyOrderItems.orderId, orderId));
 
   return { ...order, items };
 }
 
-export function getPatientOrders(patientId: string) {
+export async function getPatientOrders(patientId: string) {
   const db = getDatabase();
   return db.select({
     order: pharmacyOrders,
@@ -677,31 +675,29 @@ export function getPatientOrders(patientId: string) {
   }).from(pharmacyOrders)
     .innerJoin(healthProviders, eq(pharmacyOrders.pharmacyId, healthProviders.id))
     .where(eq(pharmacyOrders.patientId, patientId))
-    .orderBy(desc(pharmacyOrders.createdAt))
-    .all();
+    .orderBy(desc(pharmacyOrders.createdAt));
 }
 
-export function updateOrderStatus(orderId: string, status: string) {
+export async function updateOrderStatus(orderId: string, status: string) {
   const db = getDatabase();
-  db.update(pharmacyOrders).set({
+  await db.update(pharmacyOrders).set({
     status: status as any,
     updatedAt: new Date(),
-  }).where(eq(pharmacyOrders.id, orderId)).run();
+  }).where(eq(pharmacyOrders.id, orderId));
 }
 
 // =============================================================================
 // LAB TESTS & BOOKINGS
 // =============================================================================
 
-export function getLabTests(category?: string) {
+export async function getLabTests(category?: string) {
   const db = getDatabase();
   const conditions: any[] = [eq(labTests.active, true)];
   if (category) conditions.push(eq(labTests.category, category));
 
   return db.select().from(labTests)
     .where(and(...conditions))
-    .orderBy(asc(labTests.name))
-    .all();
+    .orderBy(asc(labTests.name));
 }
 
 export async function bookLabTest(data: {
@@ -714,28 +710,28 @@ export async function bookLabTest(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const test = db.select().from(labTests).where(eq(labTests.id, data.testId)).get();
+  const [test] = await db.select().from(labTests).where(eq(labTests.id, data.testId)).limit(1);
   if (!test) throw new Error('Test not found');
 
-  const lab = db.select().from(healthProviders)
-    .where(and(eq(healthProviders.id, data.labId), eq(healthProviders.type, 'lab'))).get();
+  const [lab] = await db.select().from(healthProviders)
+    .where(and(eq(healthProviders.id, data.labId), eq(healthProviders.type, 'lab'))).limit(1);
   if (!lab) throw new Error('Lab not found');
 
   // Debit wallet
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, data.patientId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, data.patientId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < test.price) throw new Error('Insufficient balance');
 
   const bookingId = nanoid();
   const txRef = `LAB-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - test.price,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -746,9 +742,9 @@ export async function bookLabTest(data: {
     status: 'completed',
     metadata: JSON.stringify({ bookingId, testId: test.id }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -756,9 +752,9 @@ export async function bookLabTest(data: {
     amount: test.price,
     balanceAfter: wallet.balance - test.price,
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(labBookings).values({
+  await db.insert(labBookings).values({
     id: bookingId,
     patientId: data.patientId,
     labId: data.labId,
@@ -771,7 +767,7 @@ export async function bookLabTest(data: {
     transactionRef: txRef,
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
 
   const receiptId = await createReceipt({
     userId: data.patientId,
@@ -786,7 +782,7 @@ export async function bookLabTest(data: {
     metadata: { bookingId, testName: test.name, labName: lab.name, scheduledAt: data.scheduledAt },
   });
 
-  db.update(labBookings).set({ receiptId }).where(eq(labBookings.id, bookingId)).run();
+  await db.update(labBookings).set({ receiptId }).where(eq(labBookings.id, bookingId));
 
   await createNotification({
     userId: data.patientId,
@@ -799,7 +795,7 @@ export async function bookLabTest(data: {
   return { bookingId, transactionRef: txRef, receiptId, amount: test.price };
 }
 
-export function getPatientLabBookings(patientId: string) {
+export async function getPatientLabBookings(patientId: string) {
   const db = getDatabase();
   return db.select({
     booking: labBookings,
@@ -810,13 +806,12 @@ export function getPatientLabBookings(patientId: string) {
     .innerJoin(labTests, eq(labBookings.testId, labTests.id))
     .innerJoin(healthProviders, eq(labBookings.labId, healthProviders.id))
     .where(eq(labBookings.patientId, patientId))
-    .orderBy(desc(labBookings.createdAt))
-    .all();
+    .orderBy(desc(labBookings.createdAt));
 }
 
-export function getLabBooking(bookingId: string) {
+export async function getLabBooking(bookingId: string) {
   const db = getDatabase();
-  return db.select({
+  const [row] = await db.select({
     booking: labBookings,
     testName: labTests.name,
     testCategory: labTests.category,
@@ -829,5 +824,6 @@ export function getLabBooking(bookingId: string) {
   }).from(labBookings)
     .innerJoin(labTests, eq(labBookings.testId, labTests.id))
     .innerJoin(healthProviders, eq(labBookings.labId, healthProviders.id))
-    .where(eq(labBookings.id, bookingId)).get();
+    .where(eq(labBookings.id, bookingId)).limit(1);
+  return row ?? null;
 }

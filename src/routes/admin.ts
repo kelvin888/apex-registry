@@ -32,11 +32,11 @@ async function upsertReviewRecord(
     const reviewStatus = action === 'approve' ? 'approved' : 'rejected';
     const rejectionReason = action === 'reject' ? (notes ?? null) : null;
 
-    const existing = await db
+    const [existing] = await db
         .select({ id: reviews.id })
         .from(reviews)
         .where(eq(reviews.versionId, versionId))
-        .get();
+        .limit(1);
 
     if (existing) {
         await db.update(reviews).set({
@@ -119,12 +119,12 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
             .limit(limit)
             .offset(offset);
 
-        const countResult = await db
+        const [countResult] = await db
             .select({ count: sql<number>`count(*)` })
             .from(apps)
             .innerJoin(developers, eq(apps.developerId, developers.id))
             .where(conditions.length > 0 ? and(...conditions) : undefined)
-            .get();
+            .limit(1);
 
         return { apps: rows, total: countResult?.count ?? 0 };
     });
@@ -158,7 +158,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
         const input = reviewSchema.parse(request.body);
         const db = getDatabase();
 
-        const app = await db.select().from(apps).where(eq(apps.appId, appId)).get();
+        const [app] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
         if (!app) {
             reply.code(404).send({ error: 'App not found' });
             return;
@@ -176,11 +176,11 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
             .where(eq(apps.id, app.id));
 
         // Find the latest version for review record (if any)
-        const latestVersion = await db
+        const [latestVersion] = await db
             .select({ id: versions.id })
             .from(versions)
             .where(eq(versions.appId, app.id))
-            .get();
+            .limit(1);
 
         if (latestVersion) {
             await upsertReviewRecord(db, latestVersion.id, request.user.id, input.action, input.notes, now);
@@ -250,11 +250,11 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
             }
         }
 
-        const countResult = await db
+        const [countResult] = await db
             .select({ count: sql<number>`count(*)` })
             .from(developers)
             .where(condition)
-            .get();
+            .limit(1);
 
         return {
             developers: rows.map((d) => ({ ...d, appCount: appCounts[d.id] ?? 0 })),
@@ -282,7 +282,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
         const { id } = request.params as { id: string };
         const db = getDatabase();
 
-        const developer = await db
+        const [developer] = await db
             .select({
                 id: developers.id,
                 email: developers.email,
@@ -295,7 +295,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
             })
             .from(developers)
             .where(eq(developers.id, id))
-            .get();
+            .limit(1);
 
         if (!developer) {
             reply.code(404).send({ error: 'Developer not found' });
@@ -318,12 +318,12 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
         let totalDownloads = 0;
         if (devApps.length > 0) {
             const appIds = devApps.map((a) => a.id);
-            const dlResult = await db
+            const [dlResult] = await db
                 .select({ count: sql<number>`count(*)` })
                 .from(downloads)
                 .innerJoin(versions, eq(downloads.versionId, versions.id))
                 .where(inArray(versions.appId, appIds))
-                .get();
+                .limit(1);
             totalDownloads = dlResult?.count ?? 0;
         }
 
@@ -362,7 +362,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
             return;
         }
 
-        const developer = await db.select({ id: developers.id }).from(developers).where(eq(developers.id, id)).get();
+        const [developer] = await db.select({ id: developers.id }).from(developers).where(eq(developers.id, id)).limit(1);
         if (!developer) {
             reply.code(404).send({ error: 'Developer not found' });
             return;

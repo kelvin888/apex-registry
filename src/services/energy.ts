@@ -65,23 +65,23 @@ const GAS_VENDOR_SEED: Omit<GasVendor, 'active'>[] = [
 // SEED FUNCTIONS
 // =============================================================================
 
-export function seedEnergyProviders() {
+export async function seedEnergyProviders() {
   const db = getDatabase();
-  const existing = db.select({ id: energyProviders.id }).from(energyProviders).all();
+  const existing = await db.select({ id: energyProviders.id }).from(energyProviders);
   if (existing.length > 0) return;
 
   for (const p of [...ELECTRICITY_SEED, ...SOLAR_SEED, ...GAS_PROVIDER_SEED]) {
-    db.insert(energyProviders).values({ ...p, active: true }).run();
+    await db.insert(energyProviders).values({ ...p, active: true });
   }
 }
 
-export function seedGasVendors() {
+export async function seedGasVendors() {
   const db = getDatabase();
-  const existing = db.select({ id: gasVendors.id }).from(gasVendors).all();
+  const existing = await db.select({ id: gasVendors.id }).from(gasVendors);
   if (existing.length > 0) return;
 
   for (const v of GAS_VENDOR_SEED) {
-    db.insert(gasVendors).values({ ...v, active: true }).run();
+    await db.insert(gasVendors).values({ ...v, active: true });
   }
 }
 
@@ -89,18 +89,19 @@ export function seedGasVendors() {
 // PROVIDERS
 // =============================================================================
 
-export function getProviders(type?: 'electricity' | 'solar' | 'gas') {
+export async function getProviders(type?: 'electricity' | 'solar' | 'gas') {
   const db = getDatabase();
   if (type) {
     return db.select().from(energyProviders)
-      .where(and(eq(energyProviders.type, type), eq(energyProviders.active, true))).all();
+      .where(and(eq(energyProviders.type, type), eq(energyProviders.active, true)));
   }
-  return db.select().from(energyProviders).where(eq(energyProviders.active, true)).all();
+  return db.select().from(energyProviders).where(eq(energyProviders.active, true));
 }
 
-export function getProvider(id: string) {
+export async function getProvider(id: string) {
   const db = getDatabase();
-  return db.select().from(energyProviders).where(eq(energyProviders.id, id)).get();
+  const [row] = await db.select().from(energyProviders).where(eq(energyProviders.id, id)).limit(1);
+  return row ?? null;
 }
 
 // =============================================================================
@@ -154,8 +155,8 @@ export async function purchaseElectricity(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const provider = db.select().from(energyProviders)
-    .where(and(eq(energyProviders.id, data.providerId), eq(energyProviders.type, 'electricity'))).get();
+  const [provider] = await db.select().from(energyProviders)
+    .where(and(eq(energyProviders.id, data.providerId), eq(energyProviders.type, 'electricity'))).limit(1);
   if (!provider) throw new Error('Electricity provider not found');
 
   // Calculate charges
@@ -164,20 +165,20 @@ export async function purchaseElectricity(data: {
   const total = data.amount + serviceCharge + vat;
 
   // Wallet check & debit
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, data.userId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, data.userId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < total) throw new Error('Insufficient balance');
 
   const purchaseId = nanoid();
   const txRef = `ELEC-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - total,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -188,9 +189,9 @@ export async function purchaseElectricity(data: {
     status: 'completed',
     metadata: JSON.stringify({ purchaseId }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -198,14 +199,14 @@ export async function purchaseElectricity(data: {
     amount: total,
     balanceAfter: wallet.balance - total,
     createdAt: now,
-  }).run();
+  });
 
   // Generate simulated token
   const token = generateElectricityToken();
   const kwhRate = 6862; // ₦68.62 per kWh (Band A rate, in kobo)
   const units = (data.amount / kwhRate).toFixed(1);
 
-  db.insert(energyPurchases).values({
+  await db.insert(energyPurchases).values({
     id: purchaseId,
     userId: data.userId,
     providerId: data.providerId,
@@ -224,7 +225,7 @@ export async function purchaseElectricity(data: {
     status: 'completed',
     transactionRef: txRef,
     createdAt: now,
-  }).run();
+  });
 
   const receiptId = await createReceipt({
     userId: data.userId,
@@ -239,7 +240,7 @@ export async function purchaseElectricity(data: {
     metadata: { purchaseId, meterNumber: data.meterNumber, token, units },
   });
 
-  db.update(energyPurchases).set({ receiptId }).where(eq(energyPurchases.id, purchaseId)).run();
+  await db.update(energyPurchases).set({ receiptId }).where(eq(energyPurchases.id, purchaseId));
 
   await createNotification({
     userId: data.userId,
@@ -266,14 +267,14 @@ function generateElectricityToken(): string {
 // SAVED METERS
 // =============================================================================
 
-export function getSavedMeters(userId: string, type?: string) {
+export async function getSavedMeters(userId: string, type?: string) {
   const db = getDatabase();
   const conditions = [eq(savedMeters.userId, userId)];
   if (type) conditions.push(eq(savedMeters.type, type as any));
-  return db.select().from(savedMeters).where(and(...conditions)).orderBy(desc(savedMeters.createdAt)).all();
+  return db.select().from(savedMeters).where(and(...conditions)).orderBy(desc(savedMeters.createdAt));
 }
 
-export function saveMeter(data: {
+export async function saveMeter(data: {
   userId: string;
   providerId: string;
   type: 'electricity' | 'solar' | 'gas';
@@ -286,16 +287,16 @@ export function saveMeter(data: {
   const db = getDatabase();
 
   // Check for duplicate
-  const existing = db.select().from(savedMeters)
+  const [existing] = await db.select().from(savedMeters)
     .where(and(
       eq(savedMeters.userId, data.userId),
       eq(savedMeters.meterNumber, data.meterNumber),
       eq(savedMeters.providerId, data.providerId),
-    )).get();
+    )).limit(1);
   if (existing) throw new Error('Meter already saved');
 
   const id = nanoid();
-  db.insert(savedMeters).values({
+  await db.insert(savedMeters).values({
     id,
     userId: data.userId,
     providerId: data.providerId,
@@ -306,18 +307,18 @@ export function saveMeter(data: {
     address: data.address ?? null,
     alias: data.alias ?? null,
     createdAt: new Date(),
-  }).run();
+  });
 
   return { id };
 }
 
-export function deleteSavedMeter(userId: string, meterId: string) {
+export async function deleteSavedMeter(userId: string, meterId: string) {
   const db = getDatabase();
-  const meter = db.select().from(savedMeters)
-    .where(and(eq(savedMeters.id, meterId), eq(savedMeters.userId, userId))).get();
+  const [meter] = await db.select().from(savedMeters)
+    .where(and(eq(savedMeters.id, meterId), eq(savedMeters.userId, userId))).limit(1);
   if (!meter) throw new Error('Saved meter not found');
 
-  db.delete(savedMeters).where(eq(savedMeters.id, meterId)).run();
+  await db.delete(savedMeters).where(eq(savedMeters.id, meterId));
   return { deleted: true };
 }
 
@@ -325,33 +326,34 @@ export function deleteSavedMeter(userId: string, meterId: string) {
 // PURCHASE HISTORY
 // =============================================================================
 
-export function getPurchaseHistory(userId: string, type?: string, limit = 20, offset = 0) {
+export async function getPurchaseHistory(userId: string, type?: string, limit = 20, offset = 0) {
   const db = getDatabase();
   const conditions = [eq(energyPurchases.userId, userId)];
   if (type) conditions.push(eq(energyPurchases.type, type as any));
 
-  const rows = db.select().from(energyPurchases)
+  const rows = await db.select().from(energyPurchases)
     .where(and(...conditions))
     .orderBy(desc(energyPurchases.createdAt))
-    .limit(limit).offset(offset).all();
+    .limit(limit).offset(offset);
 
-  const total = db.select({ count: sql<number>`count(*)` }).from(energyPurchases)
-    .where(and(...conditions)).get()!.count;
+  const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(energyPurchases)
+    .where(and(...conditions));
 
-  return { purchases: rows, total, limit, offset };
+  return { purchases: rows, total: count, limit, offset };
 }
 
-export function getPurchase(userId: string, purchaseId: string) {
+export async function getPurchase(userId: string, purchaseId: string) {
   const db = getDatabase();
-  return db.select().from(energyPurchases)
-    .where(and(eq(energyPurchases.id, purchaseId), eq(energyPurchases.userId, userId))).get();
+  const [row] = await db.select().from(energyPurchases)
+    .where(and(eq(energyPurchases.id, purchaseId), eq(energyPurchases.userId, userId))).limit(1);
+  return row ?? null;
 }
 
 // =============================================================================
 // SOLAR HOME SYSTEMS
 // =============================================================================
 
-export function registerSolarDevice(data: {
+export async function registerSolarDevice(data: {
   userId: string;
   providerId: string;
   deviceSerial: string;
@@ -361,16 +363,16 @@ export function registerSolarDevice(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const provider = db.select().from(energyProviders)
-    .where(and(eq(energyProviders.id, data.providerId), eq(energyProviders.type, 'solar'))).get();
+  const [provider] = await db.select().from(energyProviders)
+    .where(and(eq(energyProviders.id, data.providerId), eq(energyProviders.type, 'solar'))).limit(1);
   if (!provider) throw new Error('Solar provider not found');
 
-  const existing = db.select().from(solarDevices)
-    .where(eq(solarDevices.deviceSerial, data.deviceSerial)).get();
+  const [existing] = await db.select().from(solarDevices)
+    .where(eq(solarDevices.deviceSerial, data.deviceSerial)).limit(1);
   if (existing) throw new Error('Device already registered');
 
   const id = nanoid();
-  db.insert(solarDevices).values({
+  await db.insert(solarDevices).values({
     id,
     userId: data.userId,
     providerId: data.providerId,
@@ -383,20 +385,21 @@ export function registerSolarDevice(data: {
     status: 'locked',
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
 
   return { deviceId: id };
 }
 
-export function getSolarDevices(userId: string) {
+export async function getSolarDevices(userId: string) {
   const db = getDatabase();
-  return db.select().from(solarDevices).where(eq(solarDevices.userId, userId)).all();
+  return db.select().from(solarDevices).where(eq(solarDevices.userId, userId));
 }
 
-export function getSolarDevice(userId: string, deviceId: string) {
+export async function getSolarDevice(userId: string, deviceId: string) {
   const db = getDatabase();
-  return db.select().from(solarDevices)
-    .where(and(eq(solarDevices.id, deviceId), eq(solarDevices.userId, userId))).get();
+  const [row] = await db.select().from(solarDevices)
+    .where(and(eq(solarDevices.id, deviceId), eq(solarDevices.userId, userId))).limit(1);
+  return row ?? null;
 }
 
 export async function paySolar(data: {
@@ -407,28 +410,29 @@ export async function paySolar(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const device = db.select().from(solarDevices)
-    .where(and(eq(solarDevices.id, data.deviceId), eq(solarDevices.userId, data.userId))).get();
+  const [device] = await db.select().from(solarDevices)
+    .where(and(eq(solarDevices.id, data.deviceId), eq(solarDevices.userId, data.userId))).limit(1);
   if (!device) throw new Error('Solar device not found');
   if (device.status === 'owned') throw new Error('Device already fully paid');
 
-  const provider = db.select().from(energyProviders).where(eq(energyProviders.id, device.providerId)).get()!;
+  const [provider] = await db.select().from(energyProviders).where(eq(energyProviders.id, device.providerId)).limit(1);
+  if (!provider) throw new Error('Provider not found');
 
   // Wallet check & debit
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, data.userId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, data.userId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < data.amount) throw new Error('Insufficient balance');
 
   const purchaseId = nanoid();
   const txRef = `SOLAR-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - data.amount,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -439,9 +443,9 @@ export async function paySolar(data: {
     status: 'completed',
     metadata: JSON.stringify({ purchaseId, deviceSerial: device.deviceSerial }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -449,7 +453,7 @@ export async function paySolar(data: {
     amount: data.amount,
     balanceAfter: wallet.balance - data.amount,
     createdAt: now,
-  }).run();
+  });
 
   // Calculate days unlocked (~₦500/day for SHS)
   const dailyRate = 50000; // ₦500 per day in kobo
@@ -461,14 +465,14 @@ export async function paySolar(data: {
   const baseDate = device.activeUntil && device.activeUntil > now ? device.activeUntil : now;
   const newActiveUntil = new Date(baseDate.getTime() + daysUnlocked * 86400000);
 
-  db.update(solarDevices).set({
+  await db.update(solarDevices).set({
     totalPaid: newTotalPaid,
     activeUntil: isOwned ? null : newActiveUntil,
     status: isOwned ? 'owned' : 'active',
     updatedAt: now,
-  }).where(eq(solarDevices.id, device.id)).run();
+  }).where(eq(solarDevices.id, device.id));
 
-  db.insert(energyPurchases).values({
+  await db.insert(energyPurchases).values({
     id: purchaseId,
     userId: data.userId,
     providerId: device.providerId,
@@ -483,7 +487,7 @@ export async function paySolar(data: {
     status: 'completed',
     transactionRef: txRef,
     createdAt: now,
-  }).run();
+  });
 
   const receiptId = await createReceipt({
     userId: data.userId,
@@ -498,7 +502,7 @@ export async function paySolar(data: {
     metadata: { purchaseId, deviceSerial: device.deviceSerial, daysUnlocked, totalPaid: newTotalPaid, totalCost: device.totalCost },
   });
 
-  db.update(energyPurchases).set({ receiptId }).where(eq(energyPurchases.id, purchaseId)).run();
+  await db.update(energyPurchases).set({ receiptId }).where(eq(energyPurchases.id, purchaseId));
 
   await createNotification({
     userId: data.userId,
@@ -517,16 +521,17 @@ export async function paySolar(data: {
 // GAS VENDORS & ORDERS
 // =============================================================================
 
-export function getGasVendors(city?: string) {
+export async function getGasVendors(city?: string) {
   const db = getDatabase();
   const conditions = [eq(gasVendors.active, true)];
   if (city) conditions.push(eq(gasVendors.city, city));
-  return db.select().from(gasVendors).where(and(...conditions)).orderBy(desc(gasVendors.rating)).all();
+  return db.select().from(gasVendors).where(and(...conditions)).orderBy(desc(gasVendors.rating));
 }
 
-export function getGasVendor(id: string) {
+export async function getGasVendor(id: string) {
   const db = getDatabase();
-  return db.select().from(gasVendors).where(eq(gasVendors.id, id)).get();
+  const [row] = await db.select().from(gasVendors).where(eq(gasVendors.id, id)).limit(1);
+  return row ?? null;
 }
 
 const CYLINDER_PRICE_MAP: Record<string, keyof GasVendor> = {
@@ -547,7 +552,7 @@ export async function orderGas(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const vendor = db.select().from(gasVendors).where(eq(gasVendors.id, data.vendorId)).get();
+  const [vendor] = await db.select().from(gasVendors).where(eq(gasVendors.id, data.vendorId)).limit(1);
   if (!vendor) throw new Error('Gas vendor not found');
 
   const priceKey = CYLINDER_PRICE_MAP[data.cylinderSize];
@@ -561,25 +566,26 @@ export async function orderGas(data: {
   }
 
   const deliveryFee = data.deliveryMethod === 'delivery' ? (vendor.deliveryFee ?? 0) : 0;
-  const gasProvider = db.select().from(energyProviders).where(eq(energyProviders.id, 'GAS_GENERIC')).get()!;
+  const [gasProvider] = await db.select().from(energyProviders).where(eq(energyProviders.id, 'GAS_GENERIC')).limit(1);
+  if (!gasProvider) throw new Error('Gas provider config not found');
   const vat = Math.round((gasPrice * gasProvider.vatRate) / 10000);
   const total = gasPrice + deliveryFee + vat;
 
   // Wallet check & debit
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, data.userId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, data.userId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < total) throw new Error('Insufficient balance');
 
   const purchaseId = nanoid();
   const txRef = `GAS-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - total,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -590,9 +596,9 @@ export async function orderGas(data: {
     status: 'completed',
     metadata: JSON.stringify({ purchaseId }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -600,9 +606,9 @@ export async function orderGas(data: {
     amount: total,
     balanceAfter: wallet.balance - total,
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(energyPurchases).values({
+  await db.insert(energyPurchases).values({
     id: purchaseId,
     userId: data.userId,
     providerId: 'GAS_GENERIC',
@@ -619,7 +625,7 @@ export async function orderGas(data: {
     status: 'completed',
     transactionRef: txRef,
     createdAt: now,
-  }).run();
+  });
 
   const receiptId = await createReceipt({
     userId: data.userId,
@@ -634,7 +640,7 @@ export async function orderGas(data: {
     metadata: { purchaseId, cylinderSize: data.cylinderSize, vendorId: data.vendorId, deliveryMethod: data.deliveryMethod },
   });
 
-  db.update(energyPurchases).set({ receiptId }).where(eq(energyPurchases.id, purchaseId)).run();
+  await db.update(energyPurchases).set({ receiptId }).where(eq(energyPurchases.id, purchaseId));
 
   await createNotification({
     userId: data.userId,

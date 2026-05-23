@@ -53,7 +53,7 @@ export async function createGoal(
     nextDeductAt = computeNextDeduct(now, opts.autoDeductFrequency);
   }
 
-  db.insert(savingsGoals).values({
+  await db.insert(savingsGoals).values({
     id,
     userId,
     name: opts.name,
@@ -68,37 +68,35 @@ export async function createGoal(
     status: 'active',
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
 
   return { id, name: opts.name, targetAmount: opts.targetAmount, currency, status: 'active' };
 }
 
-export function getGoals(userId: string) {
+export async function getGoals(userId: string) {
   const db = getDatabase();
   return db
     .select()
     .from(savingsGoals)
     .where(eq(savingsGoals.userId, userId))
-    .orderBy(desc(savingsGoals.createdAt))
-    .all();
+    .orderBy(desc(savingsGoals.createdAt));
 }
 
-export function getGoal(userId: string, goalId: string) {
+export async function getGoal(userId: string, goalId: string) {
   const db = getDatabase();
-  const goal = db
+  const [goal] = await db
     .select()
     .from(savingsGoals)
     .where(and(eq(savingsGoals.id, goalId), eq(savingsGoals.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!goal) throw Object.assign(new Error('Savings goal not found'), { statusCode: 404 });
 
-  const txns = db
+  const txns = await db
     .select()
     .from(savingsTransactions)
     .where(eq(savingsTransactions.goalId, goalId))
-    .orderBy(desc(savingsTransactions.createdAt))
-    .all();
+    .orderBy(desc(savingsTransactions.createdAt));
 
   return { ...goal, transactions: txns };
 }
@@ -109,11 +107,11 @@ export async function depositToGoal(
   amount: number,
 ) {
   const db = getDatabase();
-  const goal = db
+  const [goal] = await db
     .select()
     .from(savingsGoals)
     .where(and(eq(savingsGoals.id, goalId), eq(savingsGoals.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!goal) throw Object.assign(new Error('Savings goal not found'), { statusCode: 404 });
   if (goal.status !== 'active') throw Object.assign(new Error('Goal is not active'), { statusCode: 400 });
@@ -131,7 +129,7 @@ export async function depositToGoal(
   const newBalance = wallet.balance - amount;
   const newAvailable = wallet.availableBalance - amount;
 
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txnId,
     walletId: wallet.id,
     type: 'payment' as const,
@@ -143,28 +141,26 @@ export async function depositToGoal(
     reference: txnRef,
     metadata: JSON.stringify({ goalId }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values([
+  await db.insert(ledgerEntries).values([
     { id: nanoid(), transactionId: txnId, walletId: wallet.id, entryType: 'debit' as const, amount, balanceAfter: newBalance, createdAt: now },
-  ]).run();
+  ]);
 
-  db.update(wallets)
+  await db.update(wallets)
     .set({ balance: newBalance, availableBalance: newAvailable, updatedAt: now })
-    .where(eq(wallets.id, wallet.id))
-    .run();
+    .where(eq(wallets.id, wallet.id));
 
   // Credit savings goal
   const newGoalAmount = goal.currentAmount + amount;
   const goalStatus = newGoalAmount >= goal.targetAmount ? 'completed' : 'active';
 
-  db.update(savingsGoals)
+  await db.update(savingsGoals)
     .set({ currentAmount: newGoalAmount, status: goalStatus as any, updatedAt: now })
-    .where(eq(savingsGoals.id, goalId))
-    .run();
+    .where(eq(savingsGoals.id, goalId));
 
   // Savings transaction record
-  db.insert(savingsTransactions).values({
+  await db.insert(savingsTransactions).values({
     id: `STXN_${nanoid(14)}`,
     goalId,
     userId,
@@ -173,7 +169,7 @@ export async function depositToGoal(
     balanceAfter: newGoalAmount,
     transactionRef: txnRef,
     createdAt: now,
-  }).run();
+  });
 
   // Receipt
   await createReceipt({
@@ -207,11 +203,11 @@ export async function withdrawFromGoal(
   amount: number,
 ) {
   const db = getDatabase();
-  const goal = db
+  const [goal] = await db
     .select()
     .from(savingsGoals)
     .where(and(eq(savingsGoals.id, goalId), eq(savingsGoals.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!goal) throw Object.assign(new Error('Savings goal not found'), { statusCode: 404 });
   if (goal.status !== 'active' && goal.status !== 'completed') {
@@ -233,7 +229,7 @@ export async function withdrawFromGoal(
   const newWalletBalance = wallet.balance + amount;
   const newWalletAvailable = wallet.availableBalance + amount;
 
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txnId,
     walletId: wallet.id,
     type: 'fund' as const,
@@ -245,28 +241,26 @@ export async function withdrawFromGoal(
     reference: txnRef,
     metadata: JSON.stringify({ goalId }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values([
+  await db.insert(ledgerEntries).values([
     { id: nanoid(), transactionId: txnId, walletId: wallet.id, entryType: 'credit' as const, amount, balanceAfter: newWalletBalance, createdAt: now },
-  ]).run();
+  ]);
 
-  db.update(wallets)
+  await db.update(wallets)
     .set({ balance: newWalletBalance, availableBalance: newWalletAvailable, updatedAt: now })
-    .where(eq(wallets.id, wallet.id))
-    .run();
+    .where(eq(wallets.id, wallet.id));
 
   // Debit savings goal
   const newGoalAmount = goal.currentAmount - amount;
   const goalStatus = newGoalAmount === 0 ? 'withdrawn' : 'active';
 
-  db.update(savingsGoals)
+  await db.update(savingsGoals)
     .set({ currentAmount: newGoalAmount, status: goalStatus as any, updatedAt: now })
-    .where(eq(savingsGoals.id, goalId))
-    .run();
+    .where(eq(savingsGoals.id, goalId));
 
   // Savings transaction record
-  db.insert(savingsTransactions).values({
+  await db.insert(savingsTransactions).values({
     id: `STXN_${nanoid(14)}`,
     goalId,
     userId,
@@ -275,7 +269,7 @@ export async function withdrawFromGoal(
     balanceAfter: newGoalAmount,
     transactionRef: txnRef,
     createdAt: now,
-  }).run();
+  });
 
   await createReceipt({
     userId,
@@ -292,23 +286,22 @@ export async function withdrawFromGoal(
   return { goalId, withdrawn: amount, newBalance: newGoalAmount, goalStatus };
 }
 
-export function cancelGoal(userId: string, goalId: string) {
+export async function cancelGoal(userId: string, goalId: string) {
   const db = getDatabase();
-  const goal = db
+  const [goal] = await db
     .select()
     .from(savingsGoals)
     .where(and(eq(savingsGoals.id, goalId), eq(savingsGoals.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!goal) throw Object.assign(new Error('Savings goal not found'), { statusCode: 404 });
   if (goal.currentAmount > 0) {
     throw Object.assign(new Error('Withdraw funds before cancelling'), { statusCode: 400 });
   }
 
-  db.update(savingsGoals)
+  await db.update(savingsGoals)
     .set({ status: 'cancelled' as any, updatedAt: new Date() })
-    .where(eq(savingsGoals.id, goalId))
-    .run();
+    .where(eq(savingsGoals.id, goalId));
 
   return { goalId, status: 'cancelled' };
 }
@@ -317,7 +310,7 @@ export function cancelGoal(userId: string, goalId: string) {
 // Ajo/Esusu Groups
 // =============================================================================
 
-export function createAjoGroup(
+export async function createAjoGroup(
   userId: string,
   opts: {
     name: string;
@@ -332,7 +325,7 @@ export function createAjoGroup(
   const id = `AJO_${nanoid(16)}`;
   const inviteCode = nanoid(8).toUpperCase();
 
-  db.insert(ajoGroups).values({
+  await db.insert(ajoGroups).values({
     id,
     name: opts.name,
     creatorId: userId,
@@ -346,11 +339,11 @@ export function createAjoGroup(
     inviteCode,
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
 
   // Creator is member #1
   const memberId = `AJOM_${nanoid(14)}`;
-  db.insert(ajoMembers).values({
+  await db.insert(ajoMembers).values({
     id: memberId,
     groupId: id,
     userId,
@@ -359,36 +352,35 @@ export function createAjoGroup(
     totalContributed: 0,
     totalReceived: 0,
     joinedAt: now,
-  }).run();
+  });
 
   return { id, name: opts.name, inviteCode, maxMembers: opts.maxMembers, memberId };
 }
 
-export function joinAjoGroup(userId: string, inviteCode: string) {
+export async function joinAjoGroup(userId: string, inviteCode: string) {
   const db = getDatabase();
-  const group = db
+  const [group] = await db
     .select()
     .from(ajoGroups)
     .where(eq(ajoGroups.inviteCode, inviteCode))
-    .get();
+    .limit(1);
 
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
   if (group.status !== 'forming') throw Object.assign(new Error('Group is no longer accepting members'), { statusCode: 400 });
 
   // Check already a member
-  const existing = db
+  const [existing] = await db
     .select()
     .from(ajoMembers)
     .where(and(eq(ajoMembers.groupId, group.id), eq(ajoMembers.userId, userId)))
-    .get();
+    .limit(1);
   if (existing) throw Object.assign(new Error('Already a member'), { statusCode: 409 });
 
   // Count current members
-  const [{ count }] = db
+  const [{ count }] = await db
     .select({ count: sql<number>`count(*)` })
     .from(ajoMembers)
-    .where(eq(ajoMembers.groupId, group.id))
-    .all();
+    .where(eq(ajoMembers.groupId, group.id));
 
   if (count >= group.maxMembers) {
     throw Object.assign(new Error('Group is full'), { statusCode: 400 });
@@ -397,7 +389,7 @@ export function joinAjoGroup(userId: string, inviteCode: string) {
   const memberId = `AJOM_${nanoid(14)}`;
   const position = count + 1;
 
-  db.insert(ajoMembers).values({
+  await db.insert(ajoMembers).values({
     id: memberId,
     groupId: group.id,
     userId,
@@ -406,21 +398,20 @@ export function joinAjoGroup(userId: string, inviteCode: string) {
     totalContributed: 0,
     totalReceived: 0,
     joinedAt: new Date(),
-  }).run();
+  });
 
   // If full, activate
   if (position === group.maxMembers) {
     const nextPayout = computeNextDeduct(new Date(), group.frequency);
-    db.update(ajoGroups)
+    await db.update(ajoGroups)
       .set({ status: 'active' as any, currentRound: 1, nextPayoutAt: nextPayout, updatedAt: new Date() })
-      .where(eq(ajoGroups.id, group.id))
-      .run();
+      .where(eq(ajoGroups.id, group.id));
 
     // Create pending contributions for round 1
-    seedRoundContributions(group.id, 1, group.contributionAmount);
+    await seedRoundContributions(group.id, 1, group.contributionAmount);
 
     // Notify all members
-    const members = db.select().from(ajoMembers).where(eq(ajoMembers.groupId, group.id)).all();
+    const members = await db.select().from(ajoMembers).where(eq(ajoMembers.groupId, group.id));
     for (const m of members) {
       createNotification({
         userId: m.userId,
@@ -435,12 +426,12 @@ export function joinAjoGroup(userId: string, inviteCode: string) {
   return { groupId: group.id, memberId, position, groupName: group.name };
 }
 
-export function getAjoGroup(userId: string, groupId: string) {
+export async function getAjoGroup(userId: string, groupId: string) {
   const db = getDatabase();
-  const group = db.select().from(ajoGroups).where(eq(ajoGroups.id, groupId)).get();
+  const [group] = await db.select().from(ajoGroups).where(eq(ajoGroups.id, groupId)).limit(1);
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
 
-  const members = db
+  const members = await db
     .select({
       id: ajoMembers.id,
       userId: ajoMembers.userId,
@@ -454,26 +445,23 @@ export function getAjoGroup(userId: string, groupId: string) {
     .from(ajoMembers)
     .leftJoin(users, eq(ajoMembers.userId, users.id))
     .where(eq(ajoMembers.groupId, groupId))
-    .orderBy(ajoMembers.position)
-    .all();
+    .orderBy(ajoMembers.position);
 
-  const contributions = db
+  const contributions = await db
     .select()
     .from(ajoContributions)
     .where(eq(ajoContributions.groupId, groupId))
-    .orderBy(desc(ajoContributions.createdAt))
-    .all();
+    .orderBy(desc(ajoContributions.createdAt));
 
   return { ...group, members, contributions };
 }
 
-export function getUserAjoGroups(userId: string) {
+export async function getUserAjoGroups(userId: string) {
   const db = getDatabase();
-  const memberRows = db
+  const memberRows = await db
     .select({ groupId: ajoMembers.groupId })
     .from(ajoMembers)
-    .where(eq(ajoMembers.userId, userId))
-    .all();
+    .where(eq(ajoMembers.userId, userId));
 
   if (memberRows.length === 0) return [];
 
@@ -482,25 +470,24 @@ export function getUserAjoGroups(userId: string) {
     .select()
     .from(ajoGroups)
     .where(sql`${ajoGroups.id} IN (${sql.join(groupIds.map(id => sql`${id}`), sql`, `)})`)
-    .orderBy(desc(ajoGroups.updatedAt))
-    .all();
+    .orderBy(desc(ajoGroups.updatedAt));
 }
 
 export async function contributeToAjo(userId: string, groupId: string) {
   const db = getDatabase();
-  const group = db.select().from(ajoGroups).where(eq(ajoGroups.id, groupId)).get();
+  const [group] = await db.select().from(ajoGroups).where(eq(ajoGroups.id, groupId)).limit(1);
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
   if (group.status !== 'active') throw Object.assign(new Error('Group is not active'), { statusCode: 400 });
 
-  const member = db
+  const [member] = await db
     .select()
     .from(ajoMembers)
     .where(and(eq(ajoMembers.groupId, groupId), eq(ajoMembers.userId, userId)))
-    .get();
+    .limit(1);
   if (!member) throw Object.assign(new Error('Not a member'), { statusCode: 403 });
 
   // Check pending contribution for current round
-  const contribution = db
+  const [contribution] = await db
     .select()
     .from(ajoContributions)
     .where(
@@ -511,7 +498,7 @@ export async function contributeToAjo(userId: string, groupId: string) {
         eq(ajoContributions.status, 'pending' as any),
       ),
     )
-    .get();
+    .limit(1);
 
   if (!contribution) throw Object.assign(new Error('No pending contribution'), { statusCode: 400 });
 
@@ -529,7 +516,7 @@ export async function contributeToAjo(userId: string, groupId: string) {
   const newBalance = wallet.balance - amount;
   const newAvailable = wallet.availableBalance - amount;
 
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txnId,
     walletId: wallet.id,
     type: 'payment' as const,
@@ -541,31 +528,28 @@ export async function contributeToAjo(userId: string, groupId: string) {
     reference: txnRef,
     metadata: JSON.stringify({ groupId, round: group.currentRound }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values([
+  await db.insert(ledgerEntries).values([
     { id: nanoid(), transactionId: txnId, walletId: wallet.id, entryType: 'debit' as const, amount, balanceAfter: newBalance, createdAt: now },
-  ]).run();
+  ]);
 
-  db.update(wallets)
+  await db.update(wallets)
     .set({ balance: newBalance, availableBalance: newAvailable, updatedAt: now })
-    .where(eq(wallets.id, wallet.id))
-    .run();
+    .where(eq(wallets.id, wallet.id));
 
   // Mark contribution as paid
-  db.update(ajoContributions)
+  await db.update(ajoContributions)
     .set({ status: 'paid' as any, transactionRef: txnRef, paidAt: now })
-    .where(eq(ajoContributions.id, contribution.id))
-    .run();
+    .where(eq(ajoContributions.id, contribution.id));
 
   // Update member stats
-  db.update(ajoMembers)
+  await db.update(ajoMembers)
     .set({ totalContributed: member.totalContributed + amount })
-    .where(eq(ajoMembers.id, member.id))
-    .run();
+    .where(eq(ajoMembers.id, member.id));
 
   // Check if all contributions for this round are paid
-  const [{ pending }] = db
+  const [{ pending }] = await db
     .select({ pending: sql<number>`count(*)` })
     .from(ajoContributions)
     .where(
@@ -574,8 +558,7 @@ export async function contributeToAjo(userId: string, groupId: string) {
         eq(ajoContributions.round, group.currentRound),
         eq(ajoContributions.status, 'pending' as any),
       ),
-    )
-    .all();
+    );
 
   if (pending === 0) {
     // All paid — payout to the member whose position matches the round
@@ -587,11 +570,11 @@ export async function contributeToAjo(userId: string, groupId: string) {
 
 async function processAjoPayout(group: AjoGroup, round: number) {
   const db = getDatabase();
-  const recipient = db
+  const [recipient] = await db
     .select()
     .from(ajoMembers)
     .where(and(eq(ajoMembers.groupId, group.id), eq(ajoMembers.position, round)))
-    .get();
+    .limit(1);
 
   if (!recipient) return;
 
@@ -605,7 +588,7 @@ async function processAjoPayout(group: AjoGroup, round: number) {
   const newBalance = wallet.balance + payoutAmount;
   const newAvailable = wallet.availableBalance + payoutAmount;
 
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txnId,
     walletId: wallet.id,
     type: 'fund' as const,
@@ -617,22 +600,20 @@ async function processAjoPayout(group: AjoGroup, round: number) {
     reference: txnRef,
     metadata: JSON.stringify({ groupId: group.id, round }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values([
+  await db.insert(ledgerEntries).values([
     { id: nanoid(), transactionId: txnId, walletId: wallet.id, entryType: 'credit' as const, amount: payoutAmount, balanceAfter: newBalance, createdAt: now },
-  ]).run();
+  ]);
 
-  db.update(wallets)
+  await db.update(wallets)
     .set({ balance: newBalance, availableBalance: newAvailable, updatedAt: now })
-    .where(eq(wallets.id, wallet.id))
-    .run();
+    .where(eq(wallets.id, wallet.id));
 
   // Update member received
-  db.update(ajoMembers)
+  await db.update(ajoMembers)
     .set({ totalReceived: recipient.totalReceived + payoutAmount })
-    .where(eq(ajoMembers.id, recipient.id))
-    .run();
+    .where(eq(ajoMembers.id, recipient.id));
 
   // Receipt
   await createReceipt({
@@ -658,29 +639,27 @@ async function processAjoPayout(group: AjoGroup, round: number) {
 
   // Advance round or complete
   if (round >= group.totalRounds) {
-    db.update(ajoGroups)
+    await db.update(ajoGroups)
       .set({ status: 'completed' as any, updatedAt: now })
-      .where(eq(ajoGroups.id, group.id))
-      .run();
+      .where(eq(ajoGroups.id, group.id));
   } else {
     const nextPayout = computeNextDeduct(now, group.frequency);
-    db.update(ajoGroups)
+    await db.update(ajoGroups)
       .set({ currentRound: round + 1, nextPayoutAt: nextPayout, updatedAt: now })
-      .where(eq(ajoGroups.id, group.id))
-      .run();
+      .where(eq(ajoGroups.id, group.id));
 
     // Seed contributions for next round
-    seedRoundContributions(group.id, round + 1, group.contributionAmount);
+    await seedRoundContributions(group.id, round + 1, group.contributionAmount);
   }
 }
 
-function seedRoundContributions(groupId: string, round: number, amount: number) {
+async function seedRoundContributions(groupId: string, round: number, amount: number) {
   const db = getDatabase();
-  const members = db.select().from(ajoMembers).where(eq(ajoMembers.groupId, groupId)).all();
+  const members = await db.select().from(ajoMembers).where(eq(ajoMembers.groupId, groupId));
   const now = new Date();
 
   for (const member of members) {
-    db.insert(ajoContributions).values({
+    await db.insert(ajoContributions).values({
       id: `AJOCT_${nanoid(13)}`,
       groupId,
       memberId: member.id,
@@ -688,7 +667,7 @@ function seedRoundContributions(groupId: string, round: number, amount: number) 
       amount,
       status: 'pending',
       createdAt: now,
-    }).run();
+    });
   }
 }
 
@@ -700,7 +679,7 @@ export async function processAutoDeductions() {
   const db = getDatabase();
   const now = new Date();
 
-  const due = db
+  const due = await db
     .select()
     .from(savingsGoals)
     .where(
@@ -708,8 +687,7 @@ export async function processAutoDeductions() {
         eq(savingsGoals.status, 'active' as any),
         lte(savingsGoals.nextDeductAt, now),
       ),
-    )
-    .all();
+    );
 
   const results = [];
   for (const goal of due) {
@@ -718,10 +696,9 @@ export async function processAutoDeductions() {
       const result = await depositToGoal(goal.userId, goal.id, goal.autoDeductAmount);
       // Update next deduction time
       const next = computeNextDeduct(now, goal.autoDeductFrequency as any);
-      db.update(savingsGoals)
+      await db.update(savingsGoals)
         .set({ nextDeductAt: next, updatedAt: now })
-        .where(eq(savingsGoals.id, goal.id))
-        .run();
+        .where(eq(savingsGoals.id, goal.id));
       results.push({ goalId: goal.id, status: 'success', deposited: result.deposited, newBalance: result.newBalance });
     } catch (err: any) {
       results.push({ goalId: goal.id, status: 'failed', error: err.message });

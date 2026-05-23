@@ -80,11 +80,11 @@ export async function getCreditScore(userId: string) {
   const db = getDatabase();
 
   // Check cached score (valid for 24h)
-  const cached = await db
+  const [cached] = await db
     .select()
     .from(creditScores)
     .where(eq(creditScores.userId, userId))
-    .get();
+    .limit(1);
 
   const oneDayAgo = new Date(Date.now() - 86_400_000);
   if (cached && cached.updatedAt > oneDayAgo) {
@@ -99,7 +99,7 @@ export async function getCreditScore(userId: string) {
   }
 
   // Calculate score from available signals
-  const user = await db.select().from(users).where(eq(users.id, userId)).get();
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
 
   const factors: Array<{ name: string; impact: string; description: string }> = [];
@@ -132,11 +132,11 @@ export async function getCreditScore(userId: string) {
   }
 
   // Factor 3: Wallet activity (check if user has any wallet with balance)
-  const wallet = await db
+  const [wallet] = await db
     .select()
     .from(wallets)
     .where(and(eq(wallets.userId, userId), eq(wallets.status, 'active')))
-    .get();
+    .limit(1);
 
   if (wallet && wallet.balance > 0) {
     score += 100;
@@ -152,8 +152,7 @@ export async function getCreditScore(userId: string) {
   const previousLoans = await db
     .select()
     .from(loans)
-    .where(eq(loans.userId, userId))
-    .all();
+    .where(eq(loans.userId, userId));
 
   const repaid = previousLoans.filter((l) => l.status === 'repaid').length;
   const defaulted = previousLoans.filter((l) => l.status === 'defaulted').length;
@@ -240,7 +239,7 @@ export async function requestLoan(
 
   // Business requirement check
   if (config.requiresBusiness) {
-    const user = await db.select().from(users).where(eq(users.id, userId)).get();
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     if (!user?.isBusinessUser) {
       return { offered: false, reason: 'This product requires a business account' };
     }
@@ -256,8 +255,7 @@ export async function requestLoan(
   const activeLoans = await db
     .select()
     .from(loans)
-    .where(and(eq(loans.userId, userId), eq(loans.status, 'active')))
-    .all();
+    .where(and(eq(loans.userId, userId), eq(loans.status, 'active')));
 
   if (activeLoans.length >= 3) {
     return { offered: false, reason: 'Maximum concurrent active loans reached' };
@@ -314,11 +312,11 @@ export async function requestLoan(
 export async function acceptLoan(userId: string, params: { offerId: string }) {
   const db = getDatabase();
 
-  const offer = await db
+  const [offer] = await db
     .select()
     .from(loanOffers)
     .where(and(eq(loanOffers.id, params.offerId), eq(loanOffers.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!offer) {
     throw Object.assign(new Error('Offer not found'), { statusCode: 404 });
@@ -332,11 +330,11 @@ export async function acceptLoan(userId: string, params: { offerId: string }) {
   }
 
   // Get or create wallet for disbursement
-  const wallet = await db
+  const [wallet] = await db
     .select()
     .from(wallets)
     .where(and(eq(wallets.userId, userId), eq(wallets.currency, offer.currency)))
-    .get();
+    .limit(1);
 
   if (!wallet || wallet.status !== 'active') {
     throw Object.assign(new Error('Active wallet required for disbursement'), { statusCode: 400 });
@@ -426,11 +424,11 @@ export async function acceptLoan(userId: string, params: { offerId: string }) {
 export async function getLoanStatus(userId: string, params: { loanId: string }) {
   const db = getDatabase();
 
-  const loan = await db
+  const [loan] = await db
     .select()
     .from(loans)
     .where(and(eq(loans.id, params.loanId), eq(loans.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!loan) {
     throw Object.assign(new Error('Loan not found'), { statusCode: 404 });
@@ -440,8 +438,7 @@ export async function getLoanStatus(userId: string, params: { loanId: string }) 
     .select()
     .from(loanRepayments)
     .where(eq(loanRepayments.loanId, loan.id))
-    .orderBy(desc(loanRepayments.createdAt))
-    .all();
+    .orderBy(desc(loanRepayments.createdAt));
 
   return {
     loanId: loan.id,
@@ -471,11 +468,11 @@ export async function repayLoan(
 ) {
   const db = getDatabase();
 
-  const loan = await db
+  const [loan] = await db
     .select()
     .from(loans)
     .where(and(eq(loans.id, params.loanId), eq(loans.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!loan) {
     throw Object.assign(new Error('Loan not found'), { statusCode: 404 });
@@ -493,7 +490,7 @@ export async function repayLoan(
   }
 
   // Check wallet balance
-  const wallet = await db.select().from(wallets).where(eq(wallets.id, loan.walletId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.id, loan.walletId)).limit(1);
   if (!wallet || wallet.availableBalance < repayAmount) {
     throw Object.assign(new Error('Insufficient wallet balance for repayment'), { statusCode: 400 });
   }

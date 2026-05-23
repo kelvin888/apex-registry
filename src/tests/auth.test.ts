@@ -3,29 +3,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { initDatabase, closeDatabase, runMigrations } from '../db';
 import * as authService from '../services/auth';
 
 describe('Auth Service', () => {
-  let dbPath: string;
-
-  beforeEach(() => {
-    // Create temp database
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-server-test-'));
-    dbPath = path.join(tempDir, 'test.db');
-    initDatabase({ path: dbPath });
-    runMigrations();
+  beforeEach(async () => {
+    initDatabase(process.env.DATABASE_URL ?? 'postgresql://localhost/apex_test');
+    await runMigrations();
   });
 
-  afterEach(() => {
-    closeDatabase();
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath);
-      fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
-    }
+  afterEach(async () => {
+    await closeDatabase();
   });
 
   describe('registerDeveloper', () => {

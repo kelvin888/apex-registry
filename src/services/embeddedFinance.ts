@@ -20,11 +20,11 @@ export async function listWallets(developerId: string) {
 
 export async function getWallet(developerId: string, walletId: string) {
     const db = getDatabase();
-    const wallet = await db
+    const [wallet] = await db
         .select()
         .from(embeddedWallets)
         .where(and(eq(embeddedWallets.id, walletId), eq(embeddedWallets.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!wallet) throw Object.assign(new Error('Wallet not found'), { statusCode: 404 });
     return wallet;
 }
@@ -85,7 +85,7 @@ async function postEntry(
     metadata?: object,
 ) {
     const db = getDatabase();
-    const wallet = await db.select().from(embeddedWallets).where(eq(embeddedWallets.id, walletId)).get();
+    const [wallet] = await db.select().from(embeddedWallets).where(eq(embeddedWallets.id, walletId)).limit(1);
     if (!wallet) throw Object.assign(new Error('Wallet not found'), { statusCode: 404 });
     if (wallet.status !== 'active') throw Object.assign(new Error(`Wallet is ${wallet.status}`), { statusCode: 422 });
 
@@ -186,7 +186,7 @@ export async function createWebhook(developerId: string, url: string, events: st
 
 export async function deleteWebhook(developerId: string, webhookId: string) {
     const db = getDatabase();
-    const row = await db.select().from(embeddedWebhooks).where(and(eq(embeddedWebhooks.id, webhookId), eq(embeddedWebhooks.developerId, developerId))).get();
+    const [row] = await db.select().from(embeddedWebhooks).where(and(eq(embeddedWebhooks.id, webhookId), eq(embeddedWebhooks.developerId, developerId))).limit(1);
     if (!row) throw Object.assign(new Error('Webhook not found'), { statusCode: 404 });
     await db.update(embeddedWebhooks).set({ isActive: false, updatedAt: new Date() }).where(eq(embeddedWebhooks.id, webhookId));
 }

@@ -14,6 +14,7 @@ export interface CreateAppInput {
   description?: string;
   icon?: string;
   category?: string;
+  platform?: 'mobile' | 'web' | 'universal';
   supportedCountries?: string[];
 }
 
@@ -29,6 +30,7 @@ export interface ListAppsOptions {
   developerId?: string;
   status?: App['status'];
   category?: string;
+  platform?: 'mobile' | 'web' | 'universal';
   search?: string;
   limit?: number;
   offset?: number;
@@ -52,7 +54,7 @@ export async function createApp(developerId: string, input: CreateAppInput): Pro
   }
 
   // Check if appId exists
-  const existing = await db.select().from(apps).where(eq(apps.appId, input.appId)).get();
+  const [existing] = await db.select().from(apps).where(eq(apps.appId, input.appId)).limit(1);
   if (existing) {
     throw new Error('App ID already registered');
   }
@@ -66,6 +68,7 @@ export async function createApp(developerId: string, input: CreateAppInput): Pro
     description: input.description,
     icon: input.icon,
     category: input.category,
+    platform: input.platform ?? 'mobile',
     supportedCountries: input.supportedCountries ? JSON.stringify(input.supportedCountries) : undefined,
     status: 'draft',
     isPublic: false,
@@ -83,7 +86,7 @@ export async function createApp(developerId: string, input: CreateAppInput): Pro
  */
 export async function getAppById(id: string): Promise<App | null> {
   const db = getDatabase();
-  const app = await db.select().from(apps).where(eq(apps.id, id)).get();
+  const [app] = await db.select().from(apps).where(eq(apps.id, id)).limit(1);
   return app || null;
 }
 
@@ -92,7 +95,7 @@ export async function getAppById(id: string): Promise<App | null> {
  */
 export async function getAppByAppId(appId: string): Promise<App | null> {
   const db = getDatabase();
-  const app = await db.select().from(apps).where(eq(apps.appId, appId)).get();
+  const [app] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
   return app || null;
 }
 
@@ -101,14 +104,14 @@ export async function getAppByAppId(appId: string): Promise<App | null> {
  */
 export async function getAppByAppIdWithStats(appId: string): Promise<(App & { totalDownloads: number }) | null> {
   const db = getDatabase();
-  const app = await db.select().from(apps).where(eq(apps.appId, appId)).get();
+  const [app] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
   if (!app) return null;
 
-  const downloadCount = await db.select({ count: sql<number>`count(*)` })
+  const [downloadCount] = await db.select({ count: sql<number>`count(*)` })
     .from(downloads)
     .innerJoin(versions, eq(downloads.versionId, versions.id))
     .where(eq(versions.appId, app.id))
-    .get();
+    .limit(1);
 
   return { ...app, totalDownloads: downloadCount?.count || 0 };
 }
@@ -119,9 +122,9 @@ export async function getAppByAppIdWithStats(appId: string): Promise<(App & { to
 export async function updateApp(id: string, developerId: string, input: UpdateAppInput): Promise<App> {
   const db = getDatabase();
 
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, id), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('App not found or access denied');
@@ -146,9 +149,9 @@ export async function updateApp(id: string, developerId: string, input: UpdateAp
 export async function deleteApp(id: string, developerId: string): Promise<boolean> {
   const db = getDatabase();
 
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, id), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('App not found or access denied');
@@ -193,6 +196,10 @@ export async function listApps(options: ListAppsOptions = {}): Promise<{ apps: A
     conditions.push(eq(apps.category, options.category));
   }
 
+  if (options.platform) {
+    conditions.push(eq(apps.platform, options.platform));
+  }
+
   if (options.publicOnly) {
     conditions.push(eq(apps.isPublic, true));
     conditions.push(eq(apps.status, 'approved'));
@@ -219,10 +226,10 @@ export async function listApps(options: ListAppsOptions = {}): Promise<{ apps: A
     .offset(offset);
 
   // Get total count
-  const countResult = await db.select({ count: sql<number>`count(*)` })
+  const [countResult] = await db.select({ count: sql<number>`count(*)` })
     .from(apps)
     .where(whereClause)
-    .get();
+    .limit(1);
 
   const total = countResult?.count || 0;
 
@@ -230,19 +237,18 @@ export async function listApps(options: ListAppsOptions = {}): Promise<{ apps: A
   const enrichedApps: AppWithStats[] = await Promise.all(
     appsList.map(async (app) => {
       // Get latest version
-      const latestVersion = await db.select()
+      const [latestVersion] = await db.select()
         .from(versions)
         .where(and(eq(versions.appId, app.id), eq(versions.status, 'ready')))
         .orderBy(desc(versions.versionCode))
-        .limit(1)
-        .get();
+        .limit(1);
 
       // Get download count
-      const downloadCount = await db.select({ count: sql<number>`count(*)` })
+      const [downloadCount] = await db.select({ count: sql<number>`count(*)` })
         .from(downloads)
         .innerJoin(versions, eq(downloads.versionId, versions.id))
         .where(eq(versions.appId, app.id))
-        .get();
+        .limit(1);
 
       return {
         ...app,
@@ -261,9 +267,9 @@ export async function listApps(options: ListAppsOptions = {}): Promise<{ apps: A
 export async function submitForReview(id: string, developerId: string): Promise<App> {
   const db = getDatabase();
 
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, id), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('App not found or access denied');
@@ -274,9 +280,9 @@ export async function submitForReview(id: string, developerId: string): Promise<
   }
 
   // Check for at least one ready version
-  const readyVersion = await db.select().from(versions)
+  const [readyVersion] = await db.select().from(versions)
     .where(and(eq(versions.appId, id), eq(versions.status, 'ready')))
-    .get();
+    .limit(1);
 
   if (!readyVersion) {
     throw new Error('App must have at least one ready version before submission');
@@ -296,9 +302,9 @@ export async function submitForReview(id: string, developerId: string): Promise<
 export async function publishApp(id: string, developerId: string): Promise<App> {
   const db = getDatabase();
 
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, id), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('App not found or access denied');
@@ -322,9 +328,9 @@ export async function publishApp(id: string, developerId: string): Promise<App> 
 export async function unpublishApp(id: string, developerId: string): Promise<App> {
   const db = getDatabase();
 
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, id), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('App not found or access denied');

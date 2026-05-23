@@ -5,19 +5,28 @@
  * Run with: npm run db:migrate
  */
 
-import * as path from 'node:path';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
 import { initDatabase, runMigrations } from './index';
 
-const rawPath = process.env.DATABASE_PATH || './data/apex.db';
-const dbPath = path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error('[migrate] ERROR: DATABASE_URL environment variable is not set.');
+  process.exit(1);
+}
 
-console.log(`[migrate] Database: ${dbPath}`);
+console.log('[migrate] Connecting to PostgreSQL...');
 
-initDatabase({ path: dbPath });
-runMigrations();
+initDatabase(databaseUrl);
 
-console.log('[migrate] Migrations complete.');
+runMigrations()
+  .then(() => {
+    console.log('[migrate] Migrations complete.');
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('[migrate] Migration failed:', err);
+    process.exit(1);
+  });

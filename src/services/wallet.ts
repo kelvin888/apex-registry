@@ -42,7 +42,7 @@ function todayStart(): Date {
 
 async function getDailySpend(db: ReturnType<typeof getDatabase>, walletId: string): Promise<number> {
   const start = todayStart();
-  const rows = await db
+  const [rows] = await db
     .select({ total: sql<number>`COALESCE(SUM(${walletTransactions.amount} + ${walletTransactions.fee}), 0)` })
     .from(walletTransactions)
     .where(
@@ -52,12 +52,12 @@ async function getDailySpend(db: ReturnType<typeof getDatabase>, walletId: strin
         eq(walletTransactions.status, 'completed'),
       ),
     )
-    .get();
+    .limit(1);
   return rows?.total ?? 0;
 }
 
 async function getUserKycLevel(db: ReturnType<typeof getDatabase>, userId: string): Promise<string> {
-  const user = await db.select({ kycLevel: users.kycLevel }).from(users).where(eq(users.id, userId)).get();
+  const [user] = await db.select({ kycLevel: users.kycLevel }).from(users).where(eq(users.id, userId)).limit(1);
   return user?.kycLevel ?? 'none';
 }
 
@@ -75,11 +75,11 @@ function generateRef(prefix: string): string {
 export async function getOrCreateWallet(userId: string, currency = 'NGN'): Promise<Wallet> {
   const db = getDatabase();
 
-  const existing = await db
+  const [existing] = await db
     .select()
     .from(wallets)
     .where(and(eq(wallets.userId, userId), eq(wallets.currency, currency.toUpperCase())))
-    .get();
+    .limit(1);
 
   if (existing) return existing;
 
@@ -417,20 +417,19 @@ export async function getTransactionHistory(
 
   const where = conditions.length === 1 ? conditions[0] : and(...conditions);
 
-  const [rows, countResult] = await Promise.all([
+  const [rows, [countResult]] = await Promise.all([
     db
       .select()
       .from(walletTransactions)
       .where(where)
       .orderBy(desc(walletTransactions.createdAt))
       .limit(limit)
-      .offset(offset)
-      .all(),
+      .offset(offset),
     db
       .select({ count: sql<number>`COUNT(*)` })
       .from(walletTransactions)
       .where(where)
-      .get(),
+      .limit(1),
   ]);
 
   const total = countResult?.count ?? 0;

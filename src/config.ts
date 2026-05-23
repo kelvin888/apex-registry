@@ -21,7 +21,7 @@ const configSchema = z.object({
   nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
 
   // Database
-  databasePath: z.string().default('./data/apex.db'),
+  databaseUrl: z.string().min(1),
 
   // JWT
   jwtSecret: z.string().min(32),
@@ -53,7 +53,7 @@ export function loadConfig(): Config {
     host: (process.env.HOST === '::' || process.env.HOST === '[::]') ? '0.0.0.0' : process.env.HOST,
     port: process.env.PORT,
     nodeEnv: process.env.NODE_ENV,
-    databasePath: process.env.DATABASE_PATH,
+    databaseUrl: process.env.DATABASE_URL,
     jwtSecret: process.env.JWT_SECRET || (process.env.NODE_ENV === 'development' ? 'dev-secret-key-for-local-development-only!' : undefined),
     jwtExpiresIn: process.env.JWT_EXPIRES_IN,
     storagePath: process.env.STORAGE_PATH,
@@ -92,7 +92,7 @@ export function getStoragePath(config: Config, ...segments: string[]): string {
  * Get absolute database path
  */
 export function getDatabasePath(config: Config): string {
-  return path.isAbsolute(config.databasePath)
-    ? config.databasePath
-    : path.resolve(process.cwd(), config.databasePath);
+  return path.isAbsolute(config.databaseUrl)
+    ? config.databaseUrl
+    : path.resolve(process.cwd(), config.databaseUrl);
 }

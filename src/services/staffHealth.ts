@@ -17,7 +17,7 @@ import {
 
 export async function ensureSeedPlans() {
     const db = getDatabase();
-    const existing = await db.select({ id: staffHealthPlans.id }).from(staffHealthPlans).get();
+    const [existing] = await db.select({ id: staffHealthPlans.id }).from(staffHealthPlans).limit(1);
     if (existing) return;
 
     const now = new Date();
@@ -94,11 +94,11 @@ export async function listEnrollments(developerId: string) {
 
 export async function getEnrollment(developerId: string, enrollmentId: string) {
     const db = getDatabase();
-    const row = await db
+    const [row] = await db
         .select()
         .from(staffEnrollments)
         .where(and(eq(staffEnrollments.id, enrollmentId), eq(staffEnrollments.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!row) throw Object.assign(new Error('Enrollment not found'), { statusCode: 404 });
     return row;
 }
@@ -118,7 +118,7 @@ export async function enrollEmployee(
     const db = getDatabase();
 
     // Verify plan exists
-    const plan = await db.select().from(staffHealthPlans).where(eq(staffHealthPlans.id, params.planId)).get();
+    const [plan] = await db.select().from(staffHealthPlans).where(eq(staffHealthPlans.id, params.planId)).limit(1);
     if (!plan) throw Object.assign(new Error('Plan not found'), { statusCode: 404 });
 
     const now = new Date();

@@ -167,30 +167,30 @@ const PARTNER_SEED: PartnerSeed[] = [
   { id: 'RH_LITTLECAB', name: 'Little Cab', country: 'KE', appDeepLink: null, webUrl: 'https://little.bz', logoUrl: null, supportsInAppPayment: false },
 ];
 
-export function seedTransportData(): void {
+export async function seedTransportData(): Promise<void> {
   const db = getDatabase();
   if (!db) return;
 
-  const existing = db.select({ id: transportOperators.id }).from(transportOperators).limit(1).all();
+  const existing = await db.select({ id: transportOperators.id }).from(transportOperators).limit(1);
   if (existing.length > 0) return;
 
   for (const op of OPERATOR_SEED) {
-    db.insert(transportOperators).values({ ...op, active: true }).onConflictDoNothing().run();
+    await db.insert(transportOperators).values({ ...op, active: true }).onConflictDoNothing();
   }
   for (const rt of ROUTE_SEED) {
-    db.insert(transportRoutes).values({ ...rt, active: true }).onConflictDoNothing().run();
+    await db.insert(transportRoutes).values({ ...rt, active: true }).onConflictDoNothing();
   }
   for (const p of PARTNER_SEED) {
-    db.insert(ridehailPartners).values({
+    await db.insert(ridehailPartners).values({
       ...p,
       supportsInAppPayment: p.supportsInAppPayment ?? false,
       active: true,
-    }).onConflictDoNothing().run();
+    }).onConflictDoNothing();
   }
 
   // Seed upcoming schedules (next 8 hours, every 20 min per route)
   const now = Date.now();
-  const routes = db.select().from(transportRoutes).where(eq(transportRoutes.active, true)).all();
+  const routes = await db.select().from(transportRoutes).where(eq(transportRoutes.active, true));
   for (const route of routes) {
     const prices: Record<string, number> = JSON.parse(route.prices);
     const interval = 20 * 60 * 1000; // 20 min
@@ -198,7 +198,7 @@ export function seedTransportData(): void {
     for (let i = 0; i < slots; i++) {
       const dep = new Date(now + i * interval);
       const arr = new Date(dep.getTime() + route.durationMins * 60 * 1000);
-      db.insert(transportSchedules).values({
+      await db.insert(transportSchedules).values({
         id: nanoid(),
         routeId: route.id,
         departureTime: dep,
@@ -208,7 +208,7 @@ export function seedTransportData(): void {
         platform: null,
         status: 'scheduled',
         delayMins: 0,
-      }).onConflictDoNothing().run();
+      }).onConflictDoNothing();
     }
   }
 }
@@ -261,22 +261,21 @@ function validUntilFor(type: string, from: Date): Date {
 // PUBLIC API
 // =============================================================================
 
-export function getOperators(city?: string, type?: string) {
+export async function getOperators(city?: string, type?: string) {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
-  let q = db.select().from(transportOperators).where(eq(transportOperators.active, true));
-  const rows = q.all().filter(op => {
+  const rows = await db.select().from(transportOperators).where(eq(transportOperators.active, true));
+  return rows.filter(op => {
     if (city && op.city.toLowerCase() !== city.toLowerCase()) return false;
     if (type && op.type !== type) return false;
     return true;
   });
-  return rows;
 }
 
-export function getRoutes(operatorId?: string) {
+export async function getRoutes(operatorId?: string) {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
-  let rows = db.select().from(transportRoutes).where(eq(transportRoutes.active, true)).all();
+  let rows = await db.select().from(transportRoutes).where(eq(transportRoutes.active, true));
   if (operatorId) rows = rows.filter(r => r.operatorId === operatorId);
   return rows.map(r => ({
     ...r,
@@ -285,7 +284,7 @@ export function getRoutes(operatorId?: string) {
   }));
 }
 
-export function getSchedules(routeId: string) {
+export async function getSchedules(routeId: string) {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
   const now = new Date();
@@ -303,8 +302,7 @@ export function getSchedules(routeId: string) {
         sql`${transportSchedules.status} != 'cancelled'`,
       ),
     )
-    .orderBy(transportSchedules.departureTime)
-    .all();
+    .orderBy(transportSchedules.departureTime);
 }
 
 export async function purchaseTicket(params: {
@@ -322,7 +320,7 @@ export async function purchaseTicket(params: {
   const { userId, routeId, scheduleId, ticketType, adultCount, childCount = 0, walletId } = params;
 
   // Load route
-  const [route] = db.select().from(transportRoutes).where(eq(transportRoutes.id, routeId)).all();
+  const [route] = await db.select().from(transportRoutes).where(eq(transportRoutes.id, routeId)).limit(1);
   if (!route) throw new Error('Route not found');
 
   const prices: Record<string, number> = JSON.parse(route.prices);
@@ -334,7 +332,7 @@ export async function purchaseTicket(params: {
   const total = (adultCount * unitPrice) + Math.floor(childCount * unitPrice * 0.5);
 
   // Check & debit wallet
-  const [wallet] = db.select().from(wallets).where(eq(wallets.id, walletId)).all();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.id, walletId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.userId !== userId) throw new Error('Wallet does not belong to user');
   if ((wallet.balance ?? 0) < total) throw new Error('Insufficient wallet balance');
@@ -348,10 +346,10 @@ export async function purchaseTicket(params: {
 
   // Debit wallet
   const newBalance = (wallet.balance ?? 0) - total;
-  db.update(wallets).set({ balance: newBalance, updatedAt: now }).where(eq(wallets.id, walletId)).run();
+  await db.update(wallets).set({ balance: newBalance, updatedAt: now }).where(eq(wallets.id, walletId));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId,
     type: 'payment',
@@ -362,9 +360,9 @@ export async function purchaseTicket(params: {
     status: 'completed',
     metadata: null,
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId,
@@ -372,14 +370,14 @@ export async function purchaseTicket(params: {
     amount: total,
     balanceAfter: newBalance,
     createdAt: now,
-  }).run();
+  });
 
   // Decrement schedule seat count
   if (scheduleId) {
-    const [sched] = db.select().from(transportSchedules).where(eq(transportSchedules.id, scheduleId)).all();
+    const [sched] = await db.select().from(transportSchedules).where(eq(transportSchedules.id, scheduleId)).limit(1);
     if (sched) {
       const newSeats = Math.max(0, sched.availableSeats - totalPassengers);
-      db.update(transportSchedules).set({ availableSeats: newSeats }).where(eq(transportSchedules.id, scheduleId)).run();
+      await db.update(transportSchedules).set({ availableSeats: newSeats }).where(eq(transportSchedules.id, scheduleId));
     }
   }
 
@@ -429,58 +427,60 @@ export async function purchaseTicket(params: {
     createdAt: now,
   };
 
-  db.insert(transportTickets).values(ticket).run();
+  await db.insert(transportTickets).values(ticket);
 
-  const [inserted] = db.select().from(transportTickets).where(eq(transportTickets.id, ticketId)).all();
+  const [inserted] = await db.select().from(transportTickets).where(eq(transportTickets.id, ticketId)).limit(1);
   return inserted;
 }
 
-export function getMyTickets(userId: string, status?: string) {
+export async function getMyTickets(userId: string, status?: string) {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
 
-  let rows = db
+  let rows = await db
     .select()
     .from(transportTickets)
     .where(eq(transportTickets.userId, userId))
-    .orderBy(desc(transportTickets.createdAt))
-    .all();
+    .orderBy(desc(transportTickets.createdAt));
 
   if (status) rows = rows.filter(t => t.status === status);
 
   // Auto-expire tickets past validUntil
   const now = new Date();
-  return rows.map(t => {
+  const result = [];
+  for (const t of rows) {
     if (t.status === 'active' && t.validUntil < now) {
-      db.update(transportTickets).set({ status: 'expired' }).where(eq(transportTickets.id, t.id)).run();
-      return { ...t, status: 'expired' as const };
+      await db.update(transportTickets).set({ status: 'expired' }).where(eq(transportTickets.id, t.id));
+      result.push({ ...t, status: 'expired' as const });
+    } else {
+      result.push(t);
     }
-    return t;
-  });
+  }
+  return result;
 }
 
-export function getTicket(ticketId: string, userId: string): TransportTicket {
+export async function getTicket(ticketId: string, userId: string): Promise<TransportTicket> {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
 
-  const [ticket] = db.select().from(transportTickets)
+  const [ticket] = await db.select().from(transportTickets)
     .where(and(eq(transportTickets.id, ticketId), eq(transportTickets.userId, userId)))
-    .all();
+    .limit(1);
   if (!ticket) throw new Error('Ticket not found');
 
   // Auto-expire
   if (ticket.status === 'active' && ticket.validUntil < new Date()) {
-    db.update(transportTickets).set({ status: 'expired' }).where(eq(transportTickets.id, ticketId)).run();
+    await db.update(transportTickets).set({ status: 'expired' }).where(eq(transportTickets.id, ticketId));
     return { ...ticket, status: 'expired' };
   }
   return ticket;
 }
 
-export function validateTicket(ticketId: string, validatorUserId?: string): TransportTicket {
+export async function validateTicket(ticketId: string, validatorUserId?: string): Promise<TransportTicket> {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
 
-  const [ticket] = db.select().from(transportTickets).where(eq(transportTickets.id, ticketId)).all();
+  const [ticket] = await db.select().from(transportTickets).where(eq(transportTickets.id, ticketId)).limit(1);
   if (!ticket) throw new Error('Ticket not found');
 
   const now = new Date();
@@ -489,23 +489,22 @@ export function validateTicket(ticketId: string, validatorUserId?: string): Tran
   if (ticket.status === 'expired' || ticket.validUntil < now) throw new Error('Ticket has expired');
   if (ticket.status === 'refunded') throw new Error('Ticket has been refunded');
 
-  db.update(transportTickets)
+  await db.update(transportTickets)
     .set({ status: 'used', usedAt: now })
-    .where(eq(transportTickets.id, ticketId))
-    .run();
+    .where(eq(transportTickets.id, ticketId));
 
   return { ...ticket, status: 'used', usedAt: now };
 }
 
-export function getPartners(country?: string) {
+export async function getPartners(country?: string) {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
-  let rows = db.select().from(ridehailPartners).where(eq(ridehailPartners.active, true)).all();
+  let rows = await db.select().from(ridehailPartners).where(eq(ridehailPartners.active, true));
   if (country) rows = rows.filter(p => p.country === country.toUpperCase());
   return rows;
 }
 
-export function getHistory(userId: string, limit = 20) {
+export async function getHistory(userId: string, limit = 20) {
   const db = getDatabase();
   if (!db) throw new Error('Database unavailable');
   return db
@@ -513,6 +512,5 @@ export function getHistory(userId: string, limit = 20) {
     .from(transportTickets)
     .where(eq(transportTickets.userId, userId))
     .orderBy(desc(transportTickets.createdAt))
-    .limit(limit)
-    .all();
+    .limit(limit);
 }

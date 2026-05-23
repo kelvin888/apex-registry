@@ -17,16 +17,16 @@ describe('Server Integration', () => {
   let server: FastifyInstance;
 
   beforeAll(async () => {
-    // Create temp directories
+    // Create temp directories for package storage
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-server-test-'));
-    const dbPath = path.join(tempDir, 'test.db');
     const storagePath = path.join(tempDir, 'packages');
+    const databaseUrl = process.env.DATABASE_URL ?? 'postgresql://localhost/apex_test';
 
     config = {
       host: '127.0.0.1',
       port: 0, // Random port
       nodeEnv: 'test',
-      databasePath: dbPath,
+      databaseUrl,
       jwtSecret: 'test-secret-key-for-testing-only!',
       jwtExpiresIn: '7d',
       storagePath,
@@ -43,7 +43,7 @@ describe('Server Integration', () => {
 
   afterAll(async () => {
     await server.close();
-    closeDatabase();
+    await closeDatabase();
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

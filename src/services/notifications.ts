@@ -31,11 +31,11 @@ export async function registerPush(
   const now = new Date();
 
   // Upsert token — if same token exists, just update ownership
-  const existing = await db
+  const [existing] = await db
     .select()
     .from(pushTokens)
     .where(eq(pushTokens.token, params.token))
-    .get();
+    .limit(1);
 
   if (existing) {
     await db
@@ -57,11 +57,11 @@ export async function registerPush(
   // If categories specified, ensure preferences exist for them (default enabled)
   if (params.categories && params.categories.length > 0) {
     for (const cat of params.categories) {
-      const pref = await db
+      const [pref] = await db
         .select()
         .from(notificationPreferences)
         .where(and(eq(notificationPreferences.userId, userId), eq(notificationPreferences.category, cat as any)))
-        .get();
+        .limit(1);
 
       if (!pref) {
         await db.insert(notificationPreferences).values({
@@ -107,25 +107,24 @@ export async function getNotifications(
 
   const where = conditions.length === 1 ? conditions[0] : and(...conditions);
 
-  const [rows, countResult, unreadResult] = await Promise.all([
+  const [rows, [countResult], [unreadResult]] = await Promise.all([
     db
       .select()
       .from(notifications)
       .where(where)
       .orderBy(desc(notifications.createdAt))
       .limit(limit)
-      .offset(offset)
-      .all(),
+      .offset(offset),
     db
       .select({ count: sql<number>`COUNT(*)` })
       .from(notifications)
       .where(where)
-      .get(),
+      .limit(1),
     db
       .select({ count: sql<number>`COUNT(*)` })
       .from(notifications)
       .where(and(eq(notifications.userId, userId), eq(notifications.status, 'unread')))
-      .get(),
+      .limit(1),
   ]);
 
   const total = countResult?.count ?? 0;
@@ -169,8 +168,8 @@ export async function markRead(userId: string, notificationIds: string[]) {
       ),
     );
 
-  // Count how many were actually updated (SQLite returns changes via raw)
-  const updated = await db
+  // Count how many were actually updated
+  const [updated] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(notifications)
     .where(
@@ -180,12 +179,13 @@ export async function markRead(userId: string, notificationIds: string[]) {
         eq(notifications.status, 'read'),
       ),
     )
-    .get();
+    .limit(1);
 
   return {
     success: true,
     updatedCount: updated?.count ?? 0,
   };
+
 }
 
 // =============================================================================
@@ -208,7 +208,7 @@ export async function sendNotification(
   const recipientId = params.recipientId || userId;
 
   // Check recipient preference — if they opted out, skip in-app storage
-  const pref = await db
+  const [pref] = await db
     .select()
     .from(notificationPreferences)
     .where(
@@ -217,7 +217,7 @@ export async function sendNotification(
         eq(notificationPreferences.category, params.type as any),
       ),
     )
-    .get();
+    .limit(1);
 
   // Default to enabled if no preference exists
   const inAppEnabled = pref?.inAppEnabled ?? true;
@@ -260,8 +260,7 @@ export async function getPreferences(userId: string) {
   const rows = await db
     .select()
     .from(notificationPreferences)
-    .where(eq(notificationPreferences.userId, userId))
-    .all();
+    .where(eq(notificationPreferences.userId, userId));
 
   // Build a map with defaults for missing categories
   const categories = ['transactional', 'promotional', 'system'] as const;
@@ -284,7 +283,7 @@ export async function updatePreference(
   const db = getDatabase();
   const now = new Date();
 
-  const existing = await db
+  const [existing] = await db
     .select()
     .from(notificationPreferences)
     .where(
@@ -293,7 +292,7 @@ export async function updatePreference(
         eq(notificationPreferences.category, params.category as any),
       ),
     )
-    .get();
+    .limit(1);
 
   const updates: Record<string, unknown> = { updatedAt: now };
   if (params.pushEnabled !== undefined) updates.pushEnabled = params.pushEnabled;

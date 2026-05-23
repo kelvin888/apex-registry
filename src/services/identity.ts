@@ -29,7 +29,7 @@ import {
 export async function getOrCreateUser(phone: string, country: string): Promise<User> {
   const db = getDatabase();
 
-  const existing = await db.select().from(users).where(eq(users.phone, phone)).get();
+  const [existing] = await db.select().from(users).where(eq(users.phone, phone)).limit(1);
   if (existing) return existing;
 
   const now = new Date();
@@ -50,7 +50,8 @@ export async function getOrCreateUser(phone: string, country: string): Promise<U
 
 export async function getUserById(id: string): Promise<User | null> {
   const db = getDatabase();
-  return (await db.select().from(users).where(eq(users.id, id)).get()) || null;
+  const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return user || null;
 }
 
 export async function updateUserProfile(
@@ -82,16 +83,16 @@ export async function getKYCStatus(userId: string): Promise<{
   nextStep?: string;
 }> {
   const db = getDatabase();
-  const user = await db.select().from(users).where(eq(users.id, userId)).get();
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!user) throw new Error('User not found');
 
   // Get latest KYC record
-  const latest = await db
+  const [latest] = await db
     .select()
     .from(kycRecords)
     .where(eq(kycRecords.userId, userId))
     .orderBy(desc(kycRecords.submittedAt))
-    .get();
+    .limit(1);
 
   if (!latest) {
     return {
@@ -124,17 +125,17 @@ export async function submitKYC(
   }
 ): Promise<{ initiated: boolean; status: string; estimatedHours: number }> {
   const db = getDatabase();
-  const user = await db.select().from(users).where(eq(users.id, userId)).get();
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!user) throw new Error('User not found');
 
   const country = (params.country ?? user.country).toUpperCase();
 
   // Check for pending submission
-  const pending = await db
+  const [pending] = await db
     .select()
     .from(kycRecords)
     .where(and(eq(kycRecords.userId, userId), eq(kycRecords.status, 'pending')))
-    .get();
+    .limit(1);
 
   if (pending) {
     return { initiated: false, status: 'pending', estimatedHours: 24 };
@@ -175,15 +176,15 @@ export async function getKYBStatus(userId: string): Promise<{
   nextStep?: string;
 }> {
   const db = getDatabase();
-  const user = await db.select().from(users).where(eq(users.id, userId)).get();
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!user) throw new Error('User not found');
 
-  const latest = await db
+  const [latest] = await db
     .select()
     .from(kybRecords)
     .where(eq(kybRecords.userId, userId))
     .orderBy(desc(kybRecords.submittedAt))
-    .get();
+    .limit(1);
 
   if (!latest) {
     return {
@@ -216,16 +217,16 @@ export async function submitKYB(
   }
 ): Promise<{ initiated: boolean; status: string; estimatedHours: number }> {
   const db = getDatabase();
-  const user = await db.select().from(users).where(eq(users.id, userId)).get();
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!user) throw new Error('User not found');
 
   const country = (params.country ?? user.country).toUpperCase();
 
-  const pending = await db
+  const [pending] = await db
     .select()
     .from(kybRecords)
     .where(and(eq(kybRecords.userId, userId), eq(kybRecords.status, 'pending')))
-    .get();
+    .limit(1);
 
   if (pending) {
     return { initiated: false, status: 'pending', estimatedHours: 48 };
@@ -270,7 +271,7 @@ export async function reviewKYC(
   const db = getDatabase();
   const now = new Date();
 
-  const record = await db.select().from(kycRecords).where(eq(kycRecords.id, recordId)).get();
+  const [record] = await db.select().from(kycRecords).where(eq(kycRecords.id, recordId)).limit(1);
   if (!record) throw new Error('KYC record not found');
   if (record.status !== 'pending' && record.status !== 'under_review') {
     throw new Error(`Cannot review record in status: ${record.status}`);
@@ -314,7 +315,7 @@ export async function reviewKYB(
   const db = getDatabase();
   const now = new Date();
 
-  const record = await db.select().from(kybRecords).where(eq(kybRecords.id, recordId)).get();
+  const [record] = await db.select().from(kybRecords).where(eq(kybRecords.id, recordId)).limit(1);
   if (!record) throw new Error('KYB record not found');
   if (record.status !== 'pending' && record.status !== 'under_review') {
     throw new Error(`Cannot review record in status: ${record.status}`);
@@ -365,15 +366,13 @@ export async function listPendingReviews(): Promise<{
     .select()
     .from(kycRecords)
     .where(eq(kycRecords.status, 'pending'))
-    .orderBy(kycRecords.submittedAt)
-    .all();
+    .orderBy(kycRecords.submittedAt);
 
   const pendingKyb = await db
     .select()
     .from(kybRecords)
     .where(eq(kybRecords.status, 'pending'))
-    .orderBy(kybRecords.submittedAt)
-    .all();
+    .orderBy(kybRecords.submittedAt);
 
   return { kyc: pendingKyc, kyb: pendingKyb };
 }

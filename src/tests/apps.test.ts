@@ -3,23 +3,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { initDatabase, closeDatabase, runMigrations } from '../db';
 import * as authService from '../services/auth';
 import * as appsService from '../services/apps';
 
 describe('Apps Service', () => {
-  let dbPath: string;
   let developerId: string;
 
   beforeEach(async () => {
-    // Create temp database
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-server-test-'));
-    dbPath = path.join(tempDir, 'test.db');
-    initDatabase({ path: dbPath });
-    runMigrations();
+    initDatabase(process.env.DATABASE_URL ?? 'postgresql://localhost/apex_test');
+    await runMigrations();
 
     // Create a developer
     const { developer } = await authService.registerDeveloper({
@@ -30,12 +23,8 @@ describe('Apps Service', () => {
     developerId = developer.id;
   });
 
-  afterEach(() => {
-    closeDatabase();
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath);
-      fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
-    }
+  afterEach(async () => {
+    await closeDatabase();
   });
 
   describe('createApp', () => {

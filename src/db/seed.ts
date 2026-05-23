@@ -10,7 +10,6 @@
  *   Password: Password123!
  */
 
-import * as path from 'node:path';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -18,13 +17,16 @@ dotenv.config();
 import { initDatabase, runMigrations } from './index';
 import * as authService from '../services/auth';
 
-const rawPath = process.env.DATABASE_PATH || './data/apex.db';
-const dbPath = path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+    console.error('[seed] ERROR: DATABASE_URL environment variable is not set.');
+    process.exit(1);
+}
 
 async function seed() {
-    console.log(`[seed] Database: ${dbPath}`);
-    initDatabase({ path: dbPath });
-    runMigrations();
+    console.log('[seed] Connecting to PostgreSQL...');
+    initDatabase(databaseUrl!);
+    await runMigrations();
 
     // ── Developer ─────────────────────────────────────────────────────────────
     try {
@@ -49,6 +51,7 @@ async function seed() {
 (async () => { // NOSONAR - top-level await unavailable in CJS; IIFE is the correct pattern
     try {
         await seed();
+        process.exit(0);
     } catch (err) {
         console.error('[seed] Failed:', err);
         process.exit(1);

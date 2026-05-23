@@ -90,20 +90,19 @@ export async function queryReceipts(
 
   const where = conditions.length === 1 ? conditions[0] : and(...conditions);
 
-  const [rows, countResult] = await Promise.all([
+  const [rows, [countResult]] = await Promise.all([
     db
       .select()
       .from(receipts)
       .where(where)
       .orderBy(desc(receipts.createdAt))
       .limit(limit)
-      .offset(offset)
-      .all(),
+      .offset(offset),
     db
       .select({ count: sql<number>`COUNT(*)` })
       .from(receipts)
       .where(where)
-      .get(),
+      .limit(1),
   ]);
 
   const total = countResult?.count ?? 0;
@@ -135,11 +134,11 @@ export async function queryReceipts(
 export async function getReceipt(userId: string, receiptId: string) {
   const db = getDatabase();
 
-  const row = await db
+  const [row] = await db
     .select()
     .from(receipts)
     .where(and(eq(receipts.id, receiptId), eq(receipts.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!row) {
     throw Object.assign(new Error('Receipt not found'), { statusCode: 404 });

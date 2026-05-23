@@ -21,11 +21,11 @@ export async function listVehicles(developerId: string) {
 
 export async function getVehicle(developerId: string, vehicleId: string) {
     const db = getDatabase();
-    const vehicle = await db
+    const [vehicle] = await db
         .select()
         .from(fleetVehicles)
         .where(and(eq(fleetVehicles.id, vehicleId), eq(fleetVehicles.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!vehicle) throw Object.assign(new Error('Vehicle not found'), { statusCode: 404 });
     return vehicle;
 }
@@ -124,11 +124,11 @@ export async function createFuelCard(
 
 export async function topupFuelCard(developerId: string, cardId: string, amount: number) {
     const db = getDatabase();
-    const card = await db
+    const [card] = await db
         .select()
         .from(fuelCards)
         .where(and(eq(fuelCards.id, cardId), eq(fuelCards.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!card) throw Object.assign(new Error('Fuel card not found'), { statusCode: 404 });
 
     const now = new Date();

@@ -14,11 +14,11 @@ import { getDatabase, b2bWallets, b2bTransactions, b2bKybRecords, developers } f
 export async function getOrCreateWallet(developerId: string, currency = 'NGN') {
     const db = getDatabase();
 
-    const existing = await db
+    const [existing] = await db
         .select()
         .from(b2bWallets)
         .where(and(eq(b2bWallets.developerId, developerId), eq(b2bWallets.currency, currency)))
-        .get();
+        .limit(1);
 
     if (existing) return existing;
 
@@ -113,12 +113,12 @@ export async function createTransaction(
 export async function getKybStatus(developerId: string) {
     const db = getDatabase();
 
-    const record = await db
+    const [record] = await db
         .select()
         .from(b2bKybRecords)
         .where(eq(b2bKybRecords.developerId, developerId))
         .orderBy(desc(b2bKybRecords.createdAt))
-        .get();
+        .limit(1);
 
     if (!record) {
         return { status: 'not_submitted', tier: 0, record: null };
@@ -141,12 +141,12 @@ export async function submitKyb(
     const now = new Date();
 
     // Check for existing pending/approved record
-    const existing = await db
+    const [existing] = await db
         .select()
         .from(b2bKybRecords)
         .where(and(eq(b2bKybRecords.developerId, developerId)))
         .orderBy(desc(b2bKybRecords.createdAt))
-        .get();
+        .limit(1);
 
     if (existing && (existing.status === 'submitted' || existing.status === 'approved')) {
         throw new Error(`KYB already ${existing.status}`);
@@ -176,7 +176,7 @@ export async function submitKyb(
 
 export async function getDeveloperProfile(developerId: string) {
     const db = getDatabase();
-    const dev = await db
+    const [dev] = await db
         .select({
             id: developers.id,
             email: developers.email,
@@ -187,7 +187,7 @@ export async function getDeveloperProfile(developerId: string) {
         })
         .from(developers)
         .where(eq(developers.id, developerId))
-        .get();
+        .limit(1);
 
     if (!dev) throw new Error('Developer not found');
     return dev;

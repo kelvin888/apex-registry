@@ -15,6 +15,7 @@ const createAppSchema = z.object({
   description: z.string().max(500).optional(),
   icon: z.string().url().optional(),
   category: z.string().optional(),
+  platform: z.enum(['mobile', 'web', 'universal']).default('mobile'),
   supportedCountries: z.array(z.string().length(2).toUpperCase()).optional(),
 });
 
@@ -89,6 +90,7 @@ export const appsRoutes: FastifyPluginAsync = async (fastify) => {
           description: { type: 'string', maxLength: 500 },
           icon: { type: 'string', format: 'uri' },
           category: { type: 'string' },
+          platform: { type: 'string', enum: ['mobile', 'web', 'universal'] },
         },
       },
     },

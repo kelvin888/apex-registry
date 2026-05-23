@@ -36,7 +36,7 @@ export async function registerDeveloper(input: RegisterInput): Promise<AuthResul
   const db = getDatabase();
 
   // Check if email exists
-  const existing = await db.select().from(developers).where(eq(developers.email, input.email)).get();
+  const [existing] = await db.select().from(developers).where(eq(developers.email, input.email)).limit(1);
   if (existing) {
     throw new Error('Email already registered');
   }
@@ -77,7 +77,7 @@ export async function registerDeveloper(input: RegisterInput): Promise<AuthResul
 export async function loginDeveloper(input: LoginInput): Promise<AuthResult> {
   const db = getDatabase();
 
-  const developer = await db.select().from(developers).where(eq(developers.email, input.email)).get();
+  const [developer] = await db.select().from(developers).where(eq(developers.email, input.email)).limit(1);
   if (!developer) {
     throw new Error('Invalid credentials');
   }
@@ -98,7 +98,7 @@ export async function loginDeveloper(input: LoginInput): Promise<AuthResult> {
 export async function getDeveloperById(id: string): Promise<Omit<Developer, 'passwordHash' | 'apiKeyHash'> | null> {
   const db = getDatabase();
 
-  const developer = await db.select().from(developers).where(eq(developers.id, id)).get();
+  const [developer] = await db.select().from(developers).where(eq(developers.id, id)).limit(1);
   if (!developer) {
     return null;
   }
@@ -126,6 +126,7 @@ export async function verifyApiKey(key: string): Promise<Omit<Developer, 'passwo
 
   // Check additional API keys
   const allKeys = await db.select().from(apiKeys);
+
   for (const apiKey of allKeys) {
     const valid = await bcrypt.compare(key, apiKey.keyHash);
     if (valid) {
@@ -218,7 +219,7 @@ export async function registerCertificate(developerId: string, name: string, pub
 
   const fingerprint = crypto.createHash('sha256').update(publicKey).digest('hex');
 
-  const existing = await db.select().from(certificates).where(eq(certificates.fingerprint, fingerprint)).get();
+  const [existing] = await db.select().from(certificates).where(eq(certificates.fingerprint, fingerprint)).limit(1);
   if (existing) {
     throw new Error('This public key is already registered');
   }
@@ -261,7 +262,7 @@ export async function revokeCertificate(developerId: string, certId: string): Pr
 export async function changePassword(developerId: string, currentPassword: string, newPassword: string): Promise<boolean> {
   const db = getDatabase();
 
-  const developer = await db.select().from(developers).where(eq(developers.id, developerId)).get();
+  const [developer] = await db.select().from(developers).where(eq(developers.id, developerId)).limit(1);
   if (!developer) {
     throw new Error('Developer not found');
   }

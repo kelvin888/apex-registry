@@ -1,15 +1,15 @@
 /**
  * Database Schema
  *
- * Defines the database tables for the distribution server
+ * Defines the database tables for the distribution server (PostgreSQL)
  */
 
-import { sqliteTable, text, integer, real, blob, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
+import { pgTable, text, integer, doublePrecision, boolean, bigint, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core';
 
 /**
  * Developers - registered developers/organizations
  */
-export const developers = sqliteTable('developers', {
+export const developers = pgTable('developers', {
   id: text('id').primaryKey(), // nanoid
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
@@ -18,16 +18,16 @@ export const developers = sqliteTable('developers', {
   apiKey: text('api_key').notNull().unique(),
   apiKeyHash: text('api_key_hash').notNull(),
   role: text('role', { enum: ['developer', 'admin'] }).notNull().default('developer'),
-  suspended: integer('suspended', { mode: 'boolean' }).notNull().default(false),
-  verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  suspended: boolean('suspended').notNull().default(false),
+  verified: boolean('verified').notNull().default(false),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 });
 
 /**
  * Apps - registered mini-apps
  */
-export const apps = sqliteTable('apps', {
+export const apps = pgTable('apps', {
   id: text('id').primaryKey(), // nanoid
   appId: text('app_id').notNull().unique(), // com.example.myapp
   developerId: text('developer_id').notNull().references(() => developers.id),
@@ -35,11 +35,12 @@ export const apps = sqliteTable('apps', {
   description: text('description'),
   icon: text('icon'), // URL to icon
   category: text('category'),
+  platform: text('platform', { enum: ['mobile', 'web', 'universal'] }).notNull().default('mobile'),
   status: text('status', { enum: ['draft', 'pending', 'approved', 'rejected', 'suspended'] }).notNull().default('draft'),
-  isPublic: integer('is_public', { mode: 'boolean' }).notNull().default(false),
+  isPublic: boolean('is_public').notNull().default(false),
   supportedCountries: text('supported_countries'), // JSON array of ISO 3166-1 alpha-2 codes
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   appIdIdx: uniqueIndex('app_id_idx').on(table.appId),
   developerIdx: index('developer_idx').on(table.developerId),
@@ -49,7 +50,7 @@ export const apps = sqliteTable('apps', {
 /**
  * Versions - app versions/releases
  */
-export const versions = sqliteTable('versions', {
+export const versions = pgTable('versions', {
   id: text('id').primaryKey(), // nanoid
   appId: text('app_id').notNull().references(() => apps.id),
   version: text('version').notNull(), // semver: 1.0.0
@@ -63,8 +64,8 @@ export const versions = sqliteTable('versions', {
   packageHash: text('package_hash'), // SHA256
   signature: text('signature'), // package signature
   metadata: text('metadata'), // JSON metadata from app.json
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  publishedAt: integer('published_at', { mode: 'timestamp' }),
+  createdAt: timestamp('created_at').notNull(),
+  publishedAt: timestamp('published_at'),
 }, (table) => ({
   appVersionIdx: uniqueIndex('app_version_idx').on(table.appId, table.version),
   appVersionCodeIdx: uniqueIndex('app_version_code_idx').on(table.appId, table.versionCode),
@@ -73,7 +74,7 @@ export const versions = sqliteTable('versions', {
 /**
  * Downloads - download analytics
  */
-export const downloads = sqliteTable('downloads', {
+export const downloads = pgTable('downloads', {
   id: text('id').primaryKey(),
   versionId: text('version_id').notNull().references(() => versions.id),
   hostAppId: text('host_app_id'), // which host app downloaded
@@ -81,7 +82,7 @@ export const downloads = sqliteTable('downloads', {
   platform: text('platform'), // ios, android
   region: text('region'), // country code
   ipHash: text('ip_hash'), // hashed IP for uniqueness
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   versionIdx: index('download_version_idx').on(table.versionId),
   dateIdx: index('download_date_idx').on(table.createdAt),
@@ -90,16 +91,16 @@ export const downloads = sqliteTable('downloads', {
 /**
  * API Keys - additional API keys for CI/CD
  */
-export const apiKeys = sqliteTable('api_keys', {
+export const apiKeys = pgTable('api_keys', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   name: text('name').notNull(), // "CI Key", "Production Key"
   keyHash: text('key_hash').notNull(),
   keyPrefix: text('key_prefix').notNull(), // first 8 chars for identification
   permissions: text('permissions').notNull(), // JSON array: ["upload", "publish"]
-  lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
-  expiresAt: integer('expires_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  lastUsedAt: timestamp('last_used_at'),
+  expiresAt: timestamp('expires_at'),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   developerIdx: index('api_key_developer_idx').on(table.developerId),
 }));
@@ -107,16 +108,16 @@ export const apiKeys = sqliteTable('api_keys', {
 /**
  * Certificates - signing certificates
  */
-export const certificates = sqliteTable('certificates', {
+export const certificates = pgTable('certificates', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   name: text('name').notNull(),
   publicKey: text('public_key').notNull(),
   fingerprint: text('fingerprint').notNull().unique(),
   algorithm: text('algorithm').notNull().default('RSA-SHA256'),
-  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
-  expiresAt: integer('expires_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  isDefault: boolean('is_default').notNull().default(false),
+  expiresAt: timestamp('expires_at'),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   developerIdx: index('cert_developer_idx').on(table.developerId),
 }));
@@ -124,15 +125,15 @@ export const certificates = sqliteTable('certificates', {
 /**
  * Reviews - app review queue
  */
-export const reviews = sqliteTable('reviews', {
+export const reviews = pgTable('reviews', {
   id: text('id').primaryKey(),
   versionId: text('version_id').notNull().references(() => versions.id),
   reviewerId: text('reviewer_id').references(() => developers.id), // admin who reviewed
   status: text('status', { enum: ['pending', 'approved', 'rejected'] }).notNull().default('pending'),
   notes: text('notes'), // reviewer notes
   rejectionReason: text('rejection_reason'),
-  submittedAt: integer('submitted_at', { mode: 'timestamp' }).notNull(),
-  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
+  submittedAt: timestamp('submitted_at').notNull(),
+  reviewedAt: timestamp('reviewed_at'),
 }, (table) => ({
   versionIdx: index('review_version_idx').on(table.versionId),
   statusIdx: index('review_status_idx').on(table.status),
@@ -157,7 +158,7 @@ export type Review = typeof reviews.$inferSelect;
 /**
  * Users - end-users of the super app (consumers/businesses)
  */
-export const users = sqliteTable('users', {
+export const users = pgTable('users', {
   id: text('id').primaryKey(), // nanoid
   phone: text('phone').notNull().unique(),
   email: text('email'),
@@ -167,10 +168,10 @@ export const users = sqliteTable('users', {
   country: text('country').notNull().default('NG'), // ISO 3166-1 alpha-2
   kycLevel: text('kyc_level', { enum: ['none', 'basic', 'full', 'enhanced'] }).notNull().default('none'),
   kybLevel: text('kyb_level', { enum: ['none', 'registered', 'verified', 'trusted'] }).notNull().default('none'),
-  isBusinessUser: integer('is_business_user', { mode: 'boolean' }).notNull().default(false),
-  suspended: integer('suspended', { mode: 'boolean' }).notNull().default(false),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  isBusinessUser: boolean('is_business_user').notNull().default(false),
+  suspended: boolean('suspended').notNull().default(false),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   phoneIdx: uniqueIndex('user_phone_idx').on(table.phone),
   countryIdx: index('user_country_idx').on(table.country),
@@ -179,7 +180,7 @@ export const users = sqliteTable('users', {
 /**
  * KYC Records - KYC verification submissions and reviews
  */
-export const kycRecords = sqliteTable('kyc_records', {
+export const kycRecords = pgTable('kyc_records', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   targetLevel: text('target_level', { enum: ['basic', 'full', 'enhanced'] }).notNull(),
@@ -192,8 +193,8 @@ export const kycRecords = sqliteTable('kyc_records', {
   nextStep: text('next_step'),
   rejectionReason: text('rejection_reason'),
   reviewerId: text('reviewer_id').references(() => developers.id),
-  submittedAt: integer('submitted_at', { mode: 'timestamp' }).notNull(),
-  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
+  submittedAt: timestamp('submitted_at').notNull(),
+  reviewedAt: timestamp('reviewed_at'),
 }, (table) => ({
   userIdx: index('kyc_user_idx').on(table.userId),
   statusIdx: index('kyc_status_idx').on(table.status),
@@ -202,7 +203,7 @@ export const kycRecords = sqliteTable('kyc_records', {
 /**
  * KYB Records - KYB verification submissions and reviews
  */
-export const kybRecords = sqliteTable('kyb_records', {
+export const kybRecords = pgTable('kyb_records', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   targetLevel: text('target_level', { enum: ['registered', 'verified', 'trusted'] }).notNull(),
@@ -217,8 +218,8 @@ export const kybRecords = sqliteTable('kyb_records', {
   nextStep: text('next_step'),
   rejectionReason: text('rejection_reason'),
   reviewerId: text('reviewer_id').references(() => developers.id),
-  submittedAt: integer('submitted_at', { mode: 'timestamp' }).notNull(),
-  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
+  submittedAt: timestamp('submitted_at').notNull(),
+  reviewedAt: timestamp('reviewed_at'),
 }, (table) => ({
   userIdx: index('kyb_user_idx').on(table.userId),
   statusIdx: index('kyb_status_idx').on(table.status),
@@ -238,17 +239,17 @@ export type NewKybRecord = typeof kybRecords.$inferInsert;
 /**
  * Wallets — one per user per currency
  */
-export const wallets = sqliteTable('wallets', {
+export const wallets = pgTable('wallets', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   currency: text('currency').notNull().default('NGN'),
   /** Balance in minor units (kobo, cents, etc.) */
-  balance: integer('balance').notNull().default(0),
+  balance: bigint('balance', { mode: 'number' }).notNull().default(0),
   /** Available balance (excludes holds/pending debits) */
-  availableBalance: integer('available_balance').notNull().default(0),
+  availableBalance: bigint('available_balance', { mode: 'number' }).notNull().default(0),
   status: text('status', { enum: ['active', 'frozen', 'closed'] }).notNull().default('active'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   userCurrencyIdx: uniqueIndex('wallet_user_currency_idx').on(table.userId, table.currency),
   statusIdx: index('wallet_status_idx').on(table.status),
@@ -257,21 +258,21 @@ export const wallets = sqliteTable('wallets', {
 /**
  * Wallet Transactions — every operation on a wallet
  */
-export const walletTransactions = sqliteTable('wallet_transactions', {
+export const walletTransactions = pgTable('wallet_transactions', {
   id: text('id').primaryKey(),
   walletId: text('wallet_id').notNull().references(() => wallets.id),
   type: text('type', {
     enum: ['fund', 'withdraw', 'transfer', 'payment', 'refund', 'loan_disbursement', 'loan_repayment'],
   }).notNull(),
-  amount: integer('amount').notNull(), // minor units, always positive
-  fee: integer('fee').notNull().default(0),
+  amount: bigint('amount', { mode: 'number' }).notNull(), // minor units, always positive
+  fee: bigint('fee', { mode: 'number' }).notNull().default(0),
   currency: text('currency').notNull(),
   status: text('status', { enum: ['pending', 'completed', 'failed', 'reversed'] }).notNull().default('pending'),
   description: text('description'),
   counterparty: text('counterparty'),
   reference: text('reference').notNull().unique(),
   metadata: text('metadata'), // JSON
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   walletIdx: index('txn_wallet_idx').on(table.walletId),
   typeIdx: index('txn_type_idx').on(table.type),
@@ -284,14 +285,14 @@ export const walletTransactions = sqliteTable('wallet_transactions', {
  * Ledger Entries — double-entry bookkeeping.
  * Every transaction produces exactly two entries: one debit, one credit.
  */
-export const ledgerEntries = sqliteTable('ledger_entries', {
+export const ledgerEntries = pgTable('ledger_entries', {
   id: text('id').primaryKey(),
   transactionId: text('transaction_id').notNull().references(() => walletTransactions.id),
   walletId: text('wallet_id').notNull().references(() => wallets.id),
   entryType: text('entry_type', { enum: ['debit', 'credit'] }).notNull(),
-  amount: integer('amount').notNull(), // always positive
-  balanceAfter: integer('balance_after').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(), // always positive
+  balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   txnIdx: index('ledger_txn_idx').on(table.transactionId),
   walletIdx: index('ledger_wallet_idx').on(table.walletId),
@@ -310,15 +311,15 @@ export type LedgerEntry = typeof ledgerEntries.$inferSelect;
 /**
  * Credit Scores — cached credit assessment per user
  */
-export const creditScores = sqliteTable('credit_scores', {
+export const creditScores = pgTable('credit_scores', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   score: integer('score').notNull(), // 0-1000
   band: text('band', { enum: ['poor', 'fair', 'good', 'excellent'] }).notNull(),
-  maxEligibleAmount: integer('max_eligible_amount').notNull(), // minor units
+  maxEligibleAmount: bigint('max_eligible_amount', { mode: 'number' }).notNull(), // minor units
   currency: text('currency').notNull().default('NGN'),
   factors: text('factors').notNull(), // JSON array of ScoreFactor
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   userIdx: uniqueIndex('credit_score_user_idx').on(table.userId),
 }));
@@ -326,23 +327,23 @@ export const creditScores = sqliteTable('credit_scores', {
 /**
  * Loan Offers — generated offers awaiting acceptance
  */
-export const loanOffers = sqliteTable('loan_offers', {
+export const loanOffers = pgTable('loan_offers', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   product: text('product', {
     enum: ['nano_loan', 'working_capital', 'invoice_financing', 'merchant_advance'],
   }).notNull(),
-  amount: integer('amount').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
   currency: text('currency').notNull(),
-  interestRate: real('interest_rate').notNull(),
+  interestRate: doublePrecision('interest_rate').notNull(),
   tenorDays: integer('tenor_days').notNull(),
-  totalRepayment: integer('total_repayment').notNull(),
-  monthlyRepayment: integer('monthly_repayment').notNull(),
-  fee: integer('fee').notNull().default(0),
+  totalRepayment: bigint('total_repayment', { mode: 'number' }).notNull(),
+  monthlyRepayment: bigint('monthly_repayment', { mode: 'number' }).notNull(),
+  fee: bigint('fee', { mode: 'number' }).notNull().default(0),
   purpose: text('purpose'),
   status: text('status', { enum: ['pending', 'accepted', 'expired', 'rejected'] }).notNull().default('pending'),
-  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('offer_user_idx').on(table.userId),
   statusIdx: index('offer_status_idx').on(table.status),
@@ -351,7 +352,7 @@ export const loanOffers = sqliteTable('loan_offers', {
 /**
  * Loans — active/completed loans
  */
-export const loans = sqliteTable('loans', {
+export const loans = pgTable('loans', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   offerId: text('offer_id').notNull().references(() => loanOffers.id),
@@ -359,20 +360,20 @@ export const loans = sqliteTable('loans', {
   product: text('product', {
     enum: ['nano_loan', 'working_capital', 'invoice_financing', 'merchant_advance'],
   }).notNull(),
-  amount: integer('amount').notNull(),
-  outstandingBalance: integer('outstanding_balance').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  outstandingBalance: bigint('outstanding_balance', { mode: 'number' }).notNull(),
   currency: text('currency').notNull(),
-  interestRate: real('interest_rate').notNull(),
-  totalRepayment: integer('total_repayment').notNull(),
-  fee: integer('fee').notNull().default(0),
+  interestRate: doublePrecision('interest_rate').notNull(),
+  totalRepayment: bigint('total_repayment', { mode: 'number' }).notNull(),
+  fee: bigint('fee', { mode: 'number' }).notNull().default(0),
   status: text('status', {
     enum: ['pending', 'approved', 'active', 'repaid', 'overdue', 'defaulted', 'rejected'],
   }).notNull().default('approved'),
   disbursementRef: text('disbursement_ref'),
-  disbursedAt: integer('disbursed_at', { mode: 'timestamp' }),
-  dueDate: integer('due_date', { mode: 'timestamp' }).notNull(),
-  closedAt: integer('closed_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  disbursedAt: timestamp('disbursed_at'),
+  dueDate: timestamp('due_date').notNull(),
+  closedAt: timestamp('closed_at'),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('loan_user_idx').on(table.userId),
   statusIdx: index('loan_status_idx').on(table.status),
@@ -382,13 +383,13 @@ export const loans = sqliteTable('loans', {
 /**
  * Loan Repayments — payment records against loans
  */
-export const loanRepayments = sqliteTable('loan_repayments', {
+export const loanRepayments = pgTable('loan_repayments', {
   id: text('id').primaryKey(),
   loanId: text('loan_id').notNull().references(() => loans.id),
-  amount: integer('amount').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
   type: text('type', { enum: ['scheduled', 'manual', 'auto_debit'] }).notNull(),
   walletTransactionId: text('wallet_transaction_id').references(() => walletTransactions.id),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   loanIdx: index('repayment_loan_idx').on(table.loanId),
 }));
@@ -408,12 +409,12 @@ export type LoanRepayment = typeof loanRepayments.$inferSelect;
  * Receipts — unified receipt store across all verticals.
  * Every transaction (wallet, credit, etc.) generates a receipt entry.
  */
-export const receipts = sqliteTable('receipts', {
+export const receipts = pgTable('receipts', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   vertical: text('vertical').notNull(), // e.g. 'wallet', 'credit', 'bill_payments', 'transport'
   type: text('type').notNull(), // e.g. 'fund', 'transfer', 'loan_disbursement', 'airtime'
-  amount: integer('amount').notNull(), // minor units
+  amount: bigint('amount', { mode: 'number' }).notNull(), // minor units
   currency: text('currency').notNull(),
   description: text('description').notNull(),
   counterparty: text('counterparty'),
@@ -421,7 +422,7 @@ export const receipts = sqliteTable('receipts', {
   /** Reference to the originating transaction (e.g. wallet transaction ref) */
   sourceRef: text('source_ref'),
   metadata: text('metadata'), // JSON — vertical-specific data
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('receipt_user_idx').on(table.userId),
   verticalIdx: index('receipt_vertical_idx').on(table.vertical),
@@ -441,14 +442,14 @@ export type NewReceipt = typeof receipts.$inferInsert;
 /**
  * Push Tokens — device registrations for FCM / APNs.
  */
-export const pushTokens = sqliteTable('push_tokens', {
+export const pushTokens = pgTable('push_tokens', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   token: text('token').notNull(),
   platform: text('platform', { enum: ['android', 'ios', 'web'] }).notNull(),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   userIdx: index('push_token_user_idx').on(table.userId),
   tokenIdx: uniqueIndex('push_token_token_idx').on(table.token),
@@ -457,13 +458,13 @@ export const pushTokens = sqliteTable('push_tokens', {
 /**
  * Notification Preferences — per-user, per-category opt-in/out.
  */
-export const notificationPreferences = sqliteTable('notification_preferences', {
+export const notificationPreferences = pgTable('notification_preferences', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   category: text('category', { enum: ['transactional', 'promotional', 'system'] }).notNull(),
-  pushEnabled: integer('push_enabled', { mode: 'boolean' }).notNull().default(true),
-  inAppEnabled: integer('in_app_enabled', { mode: 'boolean' }).notNull().default(true),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  pushEnabled: boolean('push_enabled').notNull().default(true),
+  inAppEnabled: boolean('in_app_enabled').notNull().default(true),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   userCategoryIdx: uniqueIndex('notif_pref_user_category_idx').on(table.userId, table.category),
 }));
@@ -471,7 +472,7 @@ export const notificationPreferences = sqliteTable('notification_preferences', {
 /**
  * Notifications — in-app notification store.
  */
-export const notifications = sqliteTable('notifications', {
+export const notifications = pgTable('notifications', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   type: text('type', { enum: ['transactional', 'promotional', 'system'] }).notNull(),
@@ -482,7 +483,7 @@ export const notifications = sqliteTable('notifications', {
   /** Source mini-app that triggered the notification (null = system-generated) */
   sourceAppId: text('source_app_id'),
   metadata: text('metadata'), // JSON
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('notif_user_idx').on(table.userId),
   typeIdx: index('notif_type_idx').on(table.type),
@@ -502,7 +503,7 @@ export type NotificationRow = typeof notifications.$inferSelect;
  * Billers — catalog of available billers per category.
  * Seeded at startup; could be synced from an aggregator API.
  */
-export const billers = sqliteTable('billers', {
+export const billers = pgTable('billers', {
   id: text('id').primaryKey(),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
@@ -517,11 +518,11 @@ export const billers = sqliteTable('billers', {
   customerIdPattern: text('customer_id_pattern'),
   /** Fixed amount options in minor units (JSON array), null = free input */
   fixedAmounts: text('fixed_amounts'),
-  minAmount: integer('min_amount'), // minor units
-  maxAmount: integer('max_amount'), // minor units
+  minAmount: bigint('min_amount', { mode: 'number' }), // minor units
+  maxAmount: bigint('max_amount', { mode: 'number' }), // minor units
   currency: text('currency').notNull().default('NGN'),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   categoryIdx: index('biller_category_idx').on(table.category),
   countryIdx: index('biller_country_idx').on(table.country),
@@ -530,13 +531,13 @@ export const billers = sqliteTable('billers', {
 /**
  * Saved Billers — user-saved biller + customer ID combos for quick repeat payments.
  */
-export const savedBillers = sqliteTable('saved_billers', {
+export const savedBillers = pgTable('saved_billers', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   billerId: text('biller_id').notNull().references(() => billers.id),
   customerId: text('customer_id').notNull(),
   alias: text('alias'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('saved_biller_user_idx').on(table.userId),
   uniqueIdx: uniqueIndex('saved_biller_unique_idx').on(table.userId, table.billerId, table.customerId),
@@ -545,12 +546,12 @@ export const savedBillers = sqliteTable('saved_billers', {
 /**
  * Bill Payments — transaction history for bill payments.
  */
-export const billPayments = sqliteTable('bill_payments', {
+export const billPayments = pgTable('bill_payments', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   billerId: text('biller_id').notNull().references(() => billers.id),
   customerId: text('customer_id').notNull(),
-  amount: integer('amount').notNull(), // minor units
+  amount: bigint('amount', { mode: 'number' }).notNull(), // minor units
   currency: text('currency').notNull(),
   status: text('status', { enum: ['pending', 'completed', 'failed', 'refunded'] }).notNull().default('pending'),
   /** Aggregator transaction reference */
@@ -559,7 +560,7 @@ export const billPayments = sqliteTable('bill_payments', {
   token: text('token'),
   receiptId: text('receipt_id').references(() => receipts.id),
   metadata: text('metadata'), // JSON
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('bill_payment_user_idx').on(table.userId),
   billerIdx: index('bill_payment_biller_idx').on(table.billerId),
@@ -570,18 +571,18 @@ export const billPayments = sqliteTable('bill_payments', {
 /**
  * Scheduled Payments — recurring bill payments.
  */
-export const scheduledPayments = sqliteTable('scheduled_payments', {
+export const scheduledPayments = pgTable('scheduled_payments', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   billerId: text('biller_id').notNull().references(() => billers.id),
   customerId: text('customer_id').notNull(),
-  amount: integer('amount').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
   currency: text('currency').notNull(),
   frequency: text('frequency', { enum: ['daily', 'weekly', 'monthly'] }).notNull(),
-  nextRunAt: integer('next_run_at', { mode: 'timestamp' }).notNull(),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
-  lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  nextRunAt: timestamp('next_run_at').notNull(),
+  active: boolean('active').notNull().default(true),
+  lastRunAt: timestamp('last_run_at'),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('scheduled_payment_user_idx').on(table.userId),
   nextRunIdx: index('scheduled_payment_next_run_idx').on(table.nextRunAt),
@@ -597,7 +598,7 @@ export type ScheduledPayment = typeof scheduledPayments.$inferSelect;
 // =============================================================================
 
 /** Beneficiaries (saved transfer recipients) */
-export const beneficiaries = sqliteTable('beneficiaries', {
+export const beneficiaries = pgTable('beneficiaries', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   type: text('type', { enum: ['wallet', 'bank'] }).notNull(),
@@ -608,15 +609,15 @@ export const beneficiaries = sqliteTable('beneficiaries', {
   accountName: text('account_name').notNull(),
   alias: text('alias'),
   transferCount: integer('transfer_count').notNull().default(0),
-  lastTransferAt: integer('last_transfer_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  lastTransferAt: timestamp('last_transfer_at'),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('beneficiary_user_idx').on(table.userId),
   uniqueIdx: uniqueIndex('beneficiary_unique_idx').on(table.userId, table.type, table.accountId),
 }));
 
 /** Transfers (P2P wallet + bank) */
-export const transfers = sqliteTable('transfers', {
+export const transfers = pgTable('transfers', {
   id: text('id').primaryKey(),
   senderId: text('sender_id').notNull().references(() => users.id),
   recipientType: text('recipient_type', { enum: ['wallet', 'bank'] }).notNull(),
@@ -625,14 +626,14 @@ export const transfers = sqliteTable('transfers', {
   bankCode: text('bank_code'),
   bankName: text('bank_name'),
   accountName: text('account_name'),
-  amount: integer('amount').notNull(),
-  fee: integer('fee').notNull().default(0),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  fee: bigint('fee', { mode: 'number' }).notNull().default(0),
   currency: text('currency').notNull().default('NGN'),
   narration: text('narration'),
   status: text('status', { enum: ['pending', 'completed', 'failed', 'reversed'] }).notNull().default('pending'),
   transactionRef: text('transaction_ref').notNull(),
   receiptId: text('receipt_id'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   senderIdx: index('transfer_sender_idx').on(table.senderId),
   recipientIdx: index('transfer_recipient_idx').on(table.recipientId),
@@ -641,59 +642,59 @@ export const transfers = sqliteTable('transfers', {
 }));
 
 /** Savings Goals */
-export const savingsGoals = sqliteTable('savings_goals', {
+export const savingsGoals = pgTable('savings_goals', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   name: text('name').notNull(),
-  targetAmount: integer('target_amount').notNull(),
-  currentAmount: integer('current_amount').notNull().default(0),
+  targetAmount: bigint('target_amount', { mode: 'number' }).notNull(),
+  currentAmount: bigint('current_amount', { mode: 'number' }).notNull().default(0),
   currency: text('currency').notNull().default('NGN'),
-  deadline: integer('deadline', { mode: 'timestamp' }),
+  deadline: timestamp('deadline'),
   /** Whether user can withdraw before deadline */
-  locked: integer('locked', { mode: 'boolean' }).notNull().default(false),
+  locked: boolean('locked').notNull().default(false),
   /** Auto-deduction frequency */
   autoDeductFrequency: text('auto_deduct_frequency', { enum: ['none', 'daily', 'weekly', 'monthly'] }).notNull().default('none'),
-  autoDeductAmount: integer('auto_deduct_amount'),
-  nextDeductAt: integer('next_deduct_at', { mode: 'timestamp' }),
+  autoDeductAmount: bigint('auto_deduct_amount', { mode: 'number' }),
+  nextDeductAt: timestamp('next_deduct_at'),
   status: text('status', { enum: ['active', 'completed', 'withdrawn', 'cancelled'] }).notNull().default('active'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   userIdx: index('savings_goal_user_idx').on(table.userId),
   statusIdx: index('savings_goal_status_idx').on(table.status),
 }));
 
 /** Savings Transactions (deposits/withdrawals against goals) */
-export const savingsTransactions = sqliteTable('savings_transactions', {
+export const savingsTransactions = pgTable('savings_transactions', {
   id: text('id').primaryKey(),
   goalId: text('goal_id').notNull().references(() => savingsGoals.id),
   userId: text('user_id').notNull().references(() => users.id),
   type: text('type', { enum: ['deposit', 'withdrawal', 'auto_deduct'] }).notNull(),
-  amount: integer('amount').notNull(),
-  balanceAfter: integer('balance_after').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
   transactionRef: text('transaction_ref'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   goalIdx: index('savings_txn_goal_idx').on(table.goalId),
   userIdx: index('savings_txn_user_idx').on(table.userId),
 }));
 
 /** Ajo/Esusu Groups (rotating savings clubs) */
-export const ajoGroups = sqliteTable('ajo_groups', {
+export const ajoGroups = pgTable('ajo_groups', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   creatorId: text('creator_id').notNull().references(() => users.id),
-  contributionAmount: integer('contribution_amount').notNull(),
+  contributionAmount: bigint('contribution_amount', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
   frequency: text('frequency', { enum: ['daily', 'weekly', 'biweekly', 'monthly'] }).notNull(),
   maxMembers: integer('max_members').notNull(),
   currentRound: integer('current_round').notNull().default(0),
   totalRounds: integer('total_rounds').notNull(),
-  nextPayoutAt: integer('next_payout_at', { mode: 'timestamp' }),
+  nextPayoutAt: timestamp('next_payout_at'),
   status: text('status', { enum: ['forming', 'active', 'completed', 'dissolved'] }).notNull().default('forming'),
   inviteCode: text('invite_code').notNull().unique(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   creatorIdx: index('ajo_group_creator_idx').on(table.creatorId),
   statusIdx: index('ajo_group_status_idx').on(table.status),
@@ -701,15 +702,15 @@ export const ajoGroups = sqliteTable('ajo_groups', {
 }));
 
 /** Ajo/Esusu Group Members */
-export const ajoMembers = sqliteTable('ajo_members', {
+export const ajoMembers = pgTable('ajo_members', {
   id: text('id').primaryKey(),
   groupId: text('group_id').notNull().references(() => ajoGroups.id),
   userId: text('user_id').notNull().references(() => users.id),
   position: integer('position').notNull(),
   status: text('status', { enum: ['active', 'defaulted', 'removed'] }).notNull().default('active'),
-  totalContributed: integer('total_contributed').notNull().default(0),
-  totalReceived: integer('total_received').notNull().default(0),
-  joinedAt: integer('joined_at', { mode: 'timestamp' }).notNull(),
+  totalContributed: bigint('total_contributed', { mode: 'number' }).notNull().default(0),
+  totalReceived: bigint('total_received', { mode: 'number' }).notNull().default(0),
+  joinedAt: timestamp('joined_at').notNull(),
 }, (table) => ({
   groupIdx: index('ajo_member_group_idx').on(table.groupId),
   userIdx: index('ajo_member_user_idx').on(table.userId),
@@ -717,16 +718,16 @@ export const ajoMembers = sqliteTable('ajo_members', {
 }));
 
 /** Ajo/Esusu Contributions */
-export const ajoContributions = sqliteTable('ajo_contributions', {
+export const ajoContributions = pgTable('ajo_contributions', {
   id: text('id').primaryKey(),
   groupId: text('group_id').notNull().references(() => ajoGroups.id),
   memberId: text('member_id').notNull().references(() => ajoMembers.id),
   round: integer('round').notNull(),
-  amount: integer('amount').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
   status: text('status', { enum: ['pending', 'paid', 'missed'] }).notNull().default('pending'),
   transactionRef: text('transaction_ref'),
-  paidAt: integer('paid_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  paidAt: timestamp('paid_at'),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   groupRoundIdx: index('ajo_contrib_group_round_idx').on(table.groupId, table.round),
   memberIdx: index('ajo_contrib_member_idx').on(table.memberId),
@@ -745,7 +746,7 @@ export type AjoContribution = typeof ajoContributions.$inferSelect;
 // =============================================================================
 
 /** Health Providers (doctors, pharmacies, hospitals, labs) */
-export const healthProviders = sqliteTable('health_providers', {
+export const healthProviders = pgTable('health_providers', {
   id: text('id').primaryKey(),
   type: text('type', { enum: ['doctor', 'pharmacy', 'hospital', 'lab'] }).notNull(),
   name: text('name').notNull(),
@@ -754,7 +755,7 @@ export const healthProviders = sqliteTable('health_providers', {
   photoUrl: text('photo_url'),
   qualifications: text('qualifications'), // JSON array
   licenseNumber: text('license_number'),
-  consultationFee: integer('consultation_fee'), // minor units
+  consultationFee: bigint('consultation_fee', { mode: 'number' }), // minor units
   currency: text('currency').notNull().default('NGN'),
   country: text('country').notNull().default('NG'),
   city: text('city'),
@@ -766,11 +767,11 @@ export const healthProviders = sqliteTable('health_providers', {
   reviewCount: integer('review_count').default(0),
   languagesSpoken: text('languages_spoken'), // JSON array
   gender: text('gender', { enum: ['male', 'female', 'other'] }),
-  availableNow: integer('available_now', { mode: 'boolean' }).default(false),
+  availableNow: boolean('available_now').default(false),
   operatingHours: text('operating_hours'), // JSON
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   typeIdx: index('health_provider_type_idx').on(table.type),
   specialtyIdx: index('health_provider_specialty_idx').on(table.specialty),
@@ -779,21 +780,21 @@ export const healthProviders = sqliteTable('health_providers', {
 }));
 
 /** Appointments */
-export const appointments = sqliteTable('appointments', {
+export const appointments = pgTable('appointments', {
   id: text('id').primaryKey(),
   patientId: text('patient_id').notNull().references(() => users.id),
   providerId: text('provider_id').notNull().references(() => healthProviders.id),
   type: text('type', { enum: ['consultation', 'lab_test', 'follow_up'] }).notNull(),
-  scheduledAt: integer('scheduled_at', { mode: 'timestamp' }).notNull(),
+  scheduledAt: timestamp('scheduled_at').notNull(),
   duration: integer('duration').notNull().default(30), // minutes
   status: text('status', { enum: ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'] }).notNull().default('pending'),
-  consultationFee: integer('consultation_fee').notNull(),
+  consultationFee: bigint('consultation_fee', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
   transactionRef: text('transaction_ref'),
   notes: text('notes'),
   cancellationReason: text('cancellation_reason'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   patientIdx: index('appointment_patient_idx').on(table.patientId),
   providerIdx: index('appointment_provider_idx').on(table.providerId),
@@ -802,14 +803,14 @@ export const appointments = sqliteTable('appointments', {
 }));
 
 /** Consultations (live chat sessions linked to appointments) */
-export const consultations = sqliteTable('consultations', {
+export const consultations = pgTable('consultations', {
   id: text('id').primaryKey(),
   appointmentId: text('appointment_id').notNull().references(() => appointments.id),
   patientId: text('patient_id').notNull().references(() => users.id),
   providerId: text('provider_id').notNull().references(() => healthProviders.id),
   status: text('status', { enum: ['active', 'ended'] }).notNull().default('active'),
-  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
-  endedAt: integer('ended_at', { mode: 'timestamp' }),
+  startedAt: timestamp('started_at').notNull(),
+  endedAt: timestamp('ended_at'),
   summary: text('summary'), // doctor's post-consultation notes
 }, (table) => ({
   appointmentIdx: index('consultation_appt_idx').on(table.appointmentId),
@@ -817,7 +818,7 @@ export const consultations = sqliteTable('consultations', {
 }));
 
 /** Consultation Messages */
-export const consultationMessages = sqliteTable('consultation_messages', {
+export const consultationMessages = pgTable('consultation_messages', {
   id: text('id').primaryKey(),
   consultationId: text('consultation_id').notNull().references(() => consultations.id),
   senderId: text('sender_id').notNull(), // patient or provider
@@ -825,14 +826,14 @@ export const consultationMessages = sqliteTable('consultation_messages', {
   type: text('type', { enum: ['text', 'image', 'voice_note', 'file'] }).notNull(),
   content: text('content').notNull(),
   mediaUrl: text('media_url'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   consultationIdx: index('msg_consultation_idx').on(table.consultationId),
   senderIdx: index('msg_sender_idx').on(table.senderId),
 }));
 
 /** Prescriptions */
-export const prescriptions = sqliteTable('prescriptions', {
+export const prescriptions = pgTable('prescriptions', {
   id: text('id').primaryKey(),
   consultationId: text('consultation_id').notNull().references(() => consultations.id),
   patientId: text('patient_id').notNull().references(() => users.id),
@@ -841,14 +842,14 @@ export const prescriptions = sqliteTable('prescriptions', {
   notes: text('notes'),
   status: text('status', { enum: ['active', 'fulfilled', 'expired'] }).notNull().default('active'),
   receiptId: text('receipt_id'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   consultationIdx: index('prescription_consultation_idx').on(table.consultationId),
   patientIdx: index('prescription_patient_idx').on(table.patientId),
 }));
 
 /** Prescription Items (individual medicines) */
-export const prescriptionItems = sqliteTable('prescription_items', {
+export const prescriptionItems = pgTable('prescription_items', {
   id: text('id').primaryKey(),
   prescriptionId: text('prescription_id').notNull().references(() => prescriptions.id),
   medicineName: text('medicine_name').notNull(),
@@ -862,7 +863,7 @@ export const prescriptionItems = sqliteTable('prescription_items', {
 }));
 
 /** Pharmacy Orders */
-export const pharmacyOrders = sqliteTable('pharmacy_orders', {
+export const pharmacyOrders = pgTable('pharmacy_orders', {
   id: text('id').primaryKey(),
   patientId: text('patient_id').notNull().references(() => users.id),
   pharmacyId: text('pharmacy_id').notNull().references(() => healthProviders.id),
@@ -870,14 +871,14 @@ export const pharmacyOrders = sqliteTable('pharmacy_orders', {
   status: text('status', { enum: ['pending', 'confirmed', 'preparing', 'ready', 'delivering', 'delivered', 'cancelled'] }).notNull().default('pending'),
   deliveryMethod: text('delivery_method', { enum: ['pickup', 'delivery'] }).notNull(),
   deliveryAddress: text('delivery_address'),
-  subtotal: integer('subtotal').notNull(), // minor units
-  deliveryFee: integer('delivery_fee').notNull().default(0),
-  total: integer('total').notNull(),
+  subtotal: bigint('subtotal', { mode: 'number' }).notNull(), // minor units
+  deliveryFee: bigint('delivery_fee', { mode: 'number' }).notNull().default(0),
+  total: bigint('total', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
   transactionRef: text('transaction_ref'),
   receiptId: text('receipt_id'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   patientIdx: index('pharmacy_order_patient_idx').on(table.patientId),
   pharmacyIdx: index('pharmacy_order_pharmacy_idx').on(table.pharmacyId),
@@ -885,51 +886,51 @@ export const pharmacyOrders = sqliteTable('pharmacy_orders', {
 }));
 
 /** Pharmacy Order Items */
-export const pharmacyOrderItems = sqliteTable('pharmacy_order_items', {
+export const pharmacyOrderItems = pgTable('pharmacy_order_items', {
   id: text('id').primaryKey(),
   orderId: text('order_id').notNull().references(() => pharmacyOrders.id),
   medicineName: text('medicine_name').notNull(),
   quantity: integer('quantity').notNull(),
-  unitPrice: integer('unit_price').notNull(), // minor units
-  total: integer('total').notNull(),
+  unitPrice: bigint('unit_price', { mode: 'number' }).notNull(), // minor units
+  total: bigint('total', { mode: 'number' }).notNull(),
 }, (table) => ({
   orderIdx: index('pharmacy_item_order_idx').on(table.orderId),
 }));
 
 /** Insurance Plans */
-export const insurancePlans = sqliteTable('insurance_plans', {
+export const insurancePlans = pgTable('insurance_plans', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   provider: text('provider').notNull(), // e.g. NHIA, NHIF, HMO name
   type: text('type', { enum: ['public', 'private'] }).notNull(),
   country: text('country').notNull().default('NG'),
   coverageLevel: text('coverage_level', { enum: ['basic', 'standard', 'premium'] }).notNull(),
-  premiumAmount: integer('premium_amount').notNull(), // minor units
+  premiumAmount: bigint('premium_amount', { mode: 'number' }).notNull(), // minor units
   premiumFrequency: text('premium_frequency', { enum: ['monthly', 'quarterly', 'annual'] }).notNull(),
   currency: text('currency').notNull().default('NGN'),
   benefits: text('benefits').notNull(), // JSON array of covered items
-  maxCoverage: integer('max_coverage'), // annual max in minor units
+  maxCoverage: bigint('max_coverage', { mode: 'number' }), // annual max in minor units
   waitingPeriodDays: integer('waiting_period_days').notNull().default(0),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   countryIdx: index('insurance_plan_country_idx').on(table.country),
   typeIdx: index('insurance_plan_type_idx').on(table.type),
 }));
 
 /** User Insurance Enrollments */
-export const userInsurance = sqliteTable('user_insurance', {
+export const userInsurance = pgTable('user_insurance', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   planId: text('plan_id').notNull().references(() => insurancePlans.id),
   enrollmentNumber: text('enrollment_number').notNull().unique(),
   status: text('status', { enum: ['active', 'lapsed', 'cancelled'] }).notNull().default('active'),
-  startDate: integer('start_date', { mode: 'timestamp' }).notNull(),
-  nextPremiumDate: integer('next_premium_date', { mode: 'timestamp' }),
-  totalPaid: integer('total_paid').notNull().default(0),
-  totalClaimed: integer('total_claimed').notNull().default(0),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  startDate: timestamp('start_date').notNull(),
+  nextPremiumDate: timestamp('next_premium_date'),
+  totalPaid: bigint('total_paid', { mode: 'number' }).notNull().default(0),
+  totalClaimed: bigint('total_claimed', { mode: 'number' }).notNull().default(0),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   userIdx: index('user_insurance_user_idx').on(table.userId),
   planIdx: index('user_insurance_plan_idx').on(table.planId),
@@ -937,21 +938,21 @@ export const userInsurance = sqliteTable('user_insurance', {
 }));
 
 /** Insurance Claims */
-export const insuranceClaims = sqliteTable('insurance_claims', {
+export const insuranceClaims = pgTable('insurance_claims', {
   id: text('id').primaryKey(),
   enrollmentId: text('enrollment_id').notNull().references(() => userInsurance.id),
   userId: text('user_id').notNull().references(() => users.id),
   type: text('type', { enum: ['consultation', 'pharmacy', 'lab_test', 'hospitalization', 'other'] }).notNull(),
   description: text('description').notNull(),
-  amount: integer('amount').notNull(), // minor units
+  amount: bigint('amount', { mode: 'number' }).notNull(), // minor units
   currency: text('currency').notNull().default('NGN'),
   status: text('status', { enum: ['submitted', 'under_review', 'approved', 'rejected', 'paid'] }).notNull().default('submitted'),
   evidenceUrls: text('evidence_urls'), // JSON array of uploaded file URLs
   reviewNotes: text('review_notes'),
-  approvedAmount: integer('approved_amount'),
+  approvedAmount: bigint('approved_amount', { mode: 'number' }),
   appointmentId: text('appointment_id'),
-  submittedAt: integer('submitted_at', { mode: 'timestamp' }).notNull(),
-  resolvedAt: integer('resolved_at', { mode: 'timestamp' }),
+  submittedAt: timestamp('submitted_at').notNull(),
+  resolvedAt: timestamp('resolved_at'),
 }, (table) => ({
   enrollmentIdx: index('claim_enrollment_idx').on(table.enrollmentId),
   userIdx: index('claim_user_idx').on(table.userId),
@@ -959,23 +960,23 @@ export const insuranceClaims = sqliteTable('insurance_claims', {
 }));
 
 /** Lab Test Catalog */
-export const labTests = sqliteTable('lab_tests', {
+export const labTests = pgTable('lab_tests', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   category: text('category').notNull(), // e.g. blood_work, imaging, pathology
   description: text('description'),
-  price: integer('price').notNull(), // minor units
+  price: bigint('price', { mode: 'number' }).notNull(), // minor units
   currency: text('currency').notNull().default('NGN'),
   turnaroundHours: integer('turnaround_hours').notNull(), // expected result time
-  requiresFasting: integer('requires_fasting', { mode: 'boolean' }).default(false),
+  requiresFasting: boolean('requires_fasting').default(false),
   sampleType: text('sample_type'), // blood, urine, etc.
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  active: boolean('active').notNull().default(true),
 }, (table) => ({
   categoryIdx: index('lab_test_category_idx').on(table.category),
 }));
 
 /** Lab Bookings */
-export const labBookings = sqliteTable('lab_bookings', {
+export const labBookings = pgTable('lab_bookings', {
   id: text('id').primaryKey(),
   patientId: text('patient_id').notNull().references(() => users.id),
   labId: text('lab_id').notNull().references(() => healthProviders.id),
@@ -983,15 +984,15 @@ export const labBookings = sqliteTable('lab_bookings', {
   appointmentId: text('appointment_id').references(() => appointments.id),
   prescriptionId: text('prescription_id').references(() => prescriptions.id),
   status: text('status', { enum: ['booked', 'sample_collected', 'processing', 'results_ready', 'cancelled'] }).notNull().default('booked'),
-  scheduledAt: integer('scheduled_at', { mode: 'timestamp' }).notNull(),
+  scheduledAt: timestamp('scheduled_at').notNull(),
   resultSummary: text('result_summary'),
   resultUrl: text('result_url'),
-  amount: integer('amount').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
   transactionRef: text('transaction_ref'),
   receiptId: text('receipt_id'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   patientIdx: index('lab_booking_patient_idx').on(table.patientId),
   labIdx: index('lab_booking_lab_idx').on(table.labId),
@@ -1018,23 +1019,23 @@ export type LabBooking = typeof labBookings.$inferSelect;
 // =============================================================================
 
 /** Energy Providers (Discos, Solar companies, Gas suppliers) */
-export const energyProviders = sqliteTable('energy_providers', {
+export const energyProviders = pgTable('energy_providers', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   type: text('type', { enum: ['electricity', 'solar', 'gas'] }).notNull(),
   country: text('country').notNull().default('NG'),
   logo: text('logo'), // URL or null
-  serviceCharge: integer('service_charge').notNull().default(0), // minor units flat fee
+  serviceCharge: bigint('service_charge', { mode: 'number' }).notNull().default(0), // minor units flat fee
   vatRate: integer('vat_rate').notNull().default(750), // basis points (7.5% = 750)
   meterTypes: text('meter_types'), // JSON: ["prepaid","postpaid"]
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  active: boolean('active').notNull().default(true),
 }, (table) => ({
   typeIdx: index('energy_provider_type_idx').on(table.type),
   countryIdx: index('energy_provider_country_idx').on(table.country),
 }));
 
 /** Saved Meters / Devices */
-export const savedMeters = sqliteTable('saved_meters', {
+export const savedMeters = pgTable('saved_meters', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   providerId: text('provider_id').notNull().references(() => energyProviders.id),
@@ -1044,14 +1045,14 @@ export const savedMeters = sqliteTable('saved_meters', {
   customerName: text('customer_name'),
   address: text('address'),
   alias: text('alias'), // user-friendly label
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('saved_meter_user_idx').on(table.userId),
   providerIdx: index('saved_meter_provider_idx').on(table.providerId),
 }));
 
 /** Energy Purchases (electricity tokens, solar payments, gas orders) */
-export const energyPurchases = sqliteTable('energy_purchases', {
+export const energyPurchases = pgTable('energy_purchases', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   providerId: text('provider_id').notNull().references(() => energyProviders.id),
@@ -1060,10 +1061,10 @@ export const energyPurchases = sqliteTable('energy_purchases', {
   meterType: text('meter_type'),
   customerName: text('customer_name'),
   // Pricing breakdown
-  amount: integer('amount').notNull(), // base amount (minor units)
-  serviceCharge: integer('service_charge').notNull().default(0),
-  vat: integer('vat').notNull().default(0),
-  total: integer('total').notNull(), // amount + serviceCharge + vat
+  amount: bigint('amount', { mode: 'number' }).notNull(), // base amount (minor units)
+  serviceCharge: bigint('service_charge', { mode: 'number' }).notNull().default(0),
+  vat: bigint('vat', { mode: 'number' }).notNull().default(0),
+  total: bigint('total', { mode: 'number' }).notNull(), // amount + serviceCharge + vat
   currency: text('currency').notNull().default('NGN'),
   // Electricity-specific
   token: text('token'), // electricity token number
@@ -1082,7 +1083,7 @@ export const energyPurchases = sqliteTable('energy_purchases', {
   transactionRef: text('transaction_ref'),
   receiptId: text('receipt_id'),
   metadata: text('metadata'), // JSON
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('energy_purchase_user_idx').on(table.userId),
   providerIdx: index('energy_purchase_provider_idx').on(table.providerId),
@@ -1091,7 +1092,7 @@ export const energyPurchases = sqliteTable('energy_purchases', {
 }));
 
 /** Gas Vendors */
-export const gasVendors = sqliteTable('gas_vendors', {
+export const gasVendors = pgTable('gas_vendors', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   address: text('address').notNull(),
@@ -1102,33 +1103,33 @@ export const gasVendors = sqliteTable('gas_vendors', {
   phone: text('phone'),
   rating: integer('rating').default(0), // 0-500 (x100)
   // Pricing per cylinder size (minor units)
-  price3kg: integer('price_3kg'),
-  price6kg: integer('price_6kg'),
-  price12kg: integer('price_12_5kg'),
-  price25kg: integer('price_25kg'),
-  price50kg: integer('price_50kg'),
-  deliveryFee: integer('delivery_fee').default(0),
-  offersDelivery: integer('offers_delivery', { mode: 'boolean' }).default(false),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  price3kg: bigint('price_3kg', { mode: 'number' }),
+  price6kg: bigint('price_6kg', { mode: 'number' }),
+  price12kg: bigint('price_12_5kg', { mode: 'number' }),
+  price25kg: bigint('price_25kg', { mode: 'number' }),
+  price50kg: bigint('price_50kg', { mode: 'number' }),
+  deliveryFee: bigint('delivery_fee', { mode: 'number' }).default(0),
+  offersDelivery: boolean('offers_delivery').default(false),
+  active: boolean('active').notNull().default(true),
 }, (table) => ({
   cityIdx: index('gas_vendor_city_idx').on(table.city),
   countryIdx: index('gas_vendor_country_idx').on(table.country),
 }));
 
 /** Solar Devices — tracks pay-as-you-go SHS ownership progress */
-export const solarDevices = sqliteTable('solar_devices', {
+export const solarDevices = pgTable('solar_devices', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   providerId: text('provider_id').notNull().references(() => energyProviders.id),
   deviceSerial: text('device_serial').notNull(),
   deviceModel: text('device_model'),
-  totalCost: integer('total_cost').notNull(), // full ownership price (minor units)
-  totalPaid: integer('total_paid').notNull().default(0),
+  totalCost: bigint('total_cost', { mode: 'number' }).notNull(), // full ownership price (minor units)
+  totalPaid: bigint('total_paid', { mode: 'number' }).notNull().default(0),
   currency: text('currency').notNull().default('NGN'),
-  activeUntil: integer('active_until', { mode: 'timestamp' }), // current unlock expiry
+  activeUntil: timestamp('active_until'), // current unlock expiry
   status: text('status', { enum: ['active', 'locked', 'owned'] }).notNull().default('active'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   userIdx: index('solar_device_user_idx').on(table.userId),
   serialIdx: index('solar_device_serial_idx').on(table.deviceSerial),
@@ -1145,7 +1146,7 @@ export type SolarDevice = typeof solarDevices.$inferSelect;
 // =============================================================================
 
 /** Transport Operators (BRT authorities, ferry companies, rail, ride-hail partners) */
-export const transportOperators = sqliteTable('transport_operators', {
+export const transportOperators = pgTable('transport_operators', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   type: text('type', { enum: ['brt', 'bus', 'ferry', 'rail', 'ridehail'] }).notNull(),
@@ -1153,14 +1154,14 @@ export const transportOperators = sqliteTable('transport_operators', {
   city: text('city').notNull(),
   logo: text('logo'),
   website: text('website'),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  active: boolean('active').notNull().default(true),
 }, (table) => ({
   typeIdx: index('transport_op_type_idx').on(table.type),
   cityIdx: index('transport_op_city_idx').on(table.city),
 }));
 
 /** Transport Routes (origin → destination per operator) */
-export const transportRoutes = sqliteTable('transport_routes', {
+export const transportRoutes = pgTable('transport_routes', {
   id: text('id').primaryKey(),
   operatorId: text('operator_id').notNull().references(() => transportOperators.id),
   name: text('name').notNull(), // e.g. "CMS ↔ Oshodi BRT Corridor"
@@ -1172,17 +1173,17 @@ export const transportRoutes = sqliteTable('transport_routes', {
   /** JSON: { single, return, day_pass, weekly_pass } amounts in minor units */
   prices: text('prices').notNull(),
   currency: text('currency').notNull().default('NGN'),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  active: boolean('active').notNull().default(true),
 }, (table) => ({
   operatorIdx: index('transport_route_operator_idx').on(table.operatorId),
 }));
 
 /** Transport Schedules (departure slots for a route) */
-export const transportSchedules = sqliteTable('transport_schedules', {
+export const transportSchedules = pgTable('transport_schedules', {
   id: text('id').primaryKey(),
   routeId: text('route_id').notNull().references(() => transportRoutes.id),
-  departureTime: integer('departure_time', { mode: 'timestamp' }).notNull(),
-  arrivalTime: integer('arrival_time', { mode: 'timestamp' }).notNull(),
+  departureTime: timestamp('departure_time').notNull(),
+  arrivalTime: timestamp('arrival_time').notNull(),
   capacity: integer('capacity').notNull().default(50),
   availableSeats: integer('available_seats').notNull().default(50),
   platform: text('platform'),
@@ -1195,7 +1196,7 @@ export const transportSchedules = sqliteTable('transport_schedules', {
 }));
 
 /** Transport Tickets (purchased by users) */
-export const transportTickets = sqliteTable('transport_tickets', {
+export const transportTickets = pgTable('transport_tickets', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   operatorId: text('operator_id').notNull().references(() => transportOperators.id),
@@ -1204,19 +1205,19 @@ export const transportTickets = sqliteTable('transport_tickets', {
   ticketType: text('ticket_type', { enum: ['single', 'return', 'day_pass', 'weekly_pass'] }).notNull(),
   adultCount: integer('adult_count').notNull().default(1),
   childCount: integer('child_count').notNull().default(0),
-  unitPrice: integer('unit_price').notNull(), // minor units
-  total: integer('total').notNull(),
+  unitPrice: bigint('unit_price', { mode: 'number' }).notNull(), // minor units
+  total: bigint('total', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
   /** JSON blob used to render QR code: { ticketId, userId, routeId, validUntil, checksum } */
   qrData: text('qr_data').notNull(),
   status: text('status', { enum: ['active', 'used', 'expired', 'refunded'] }).notNull().default('active'),
-  validFrom: integer('valid_from', { mode: 'timestamp' }).notNull(),
-  validUntil: integer('valid_until', { mode: 'timestamp' }).notNull(),
-  usedAt: integer('used_at', { mode: 'timestamp' }),
+  validFrom: timestamp('valid_from').notNull(),
+  validUntil: timestamp('valid_until').notNull(),
+  usedAt: timestamp('used_at'),
   transactionRef: text('transaction_ref').notNull(),
   receiptId: text('receipt_id'),
   metadata: text('metadata'), // JSON
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   userIdx: index('ticket_user_idx').on(table.userId),
   operatorIdx: index('ticket_operator_idx').on(table.operatorId),
@@ -1226,7 +1227,7 @@ export const transportTickets = sqliteTable('transport_tickets', {
 }));
 
 /** Ride-Hail Partners (Bolt, Uber, local operators — for aggregation/deep-link) */
-export const ridehailPartners = sqliteTable('ridehail_partners', {
+export const ridehailPartners = pgTable('ridehail_partners', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   country: text('country').notNull().default('NG'),
@@ -1234,8 +1235,8 @@ export const ridehailPartners = sqliteTable('ridehail_partners', {
   webUrl: text('web_url'),
   logoUrl: text('logo_url'),
   /** Whether in-app payment via Apex wallet is supported */
-  supportsInAppPayment: integer('supports_in_app_payment', { mode: 'boolean' }).default(false),
-  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  supportsInAppPayment: boolean('supports_in_app_payment').default(false),
+  active: boolean('active').notNull().default(true),
 }, (table) => ({
   countryIdx: index('ridehail_partner_country_idx').on(table.country),
 }));
@@ -1253,15 +1254,15 @@ export type RidehailPartner = typeof ridehailPartners.$inferSelect;
 /**
  * B2B Wallets — one per developer per currency
  */
-export const b2bWallets = sqliteTable('b2b_wallets', {
+export const b2bWallets = pgTable('b2b_wallets', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   currency: text('currency').notNull().default('NGN'),
-  balance: integer('balance').notNull().default(0),
-  availableBalance: integer('available_balance').notNull().default(0),
+  balance: bigint('balance', { mode: 'number' }).notNull().default(0),
+  availableBalance: bigint('available_balance', { mode: 'number' }).notNull().default(0),
   status: text('status', { enum: ['active', 'frozen', 'closed'] }).notNull().default('active'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devCurrencyIdx: uniqueIndex('b2b_wallet_dev_currency_idx').on(table.developerId, table.currency),
 }));
@@ -1269,21 +1270,21 @@ export const b2bWallets = sqliteTable('b2b_wallets', {
 /**
  * B2B Transactions — every credit/debit on a b2b wallet
  */
-export const b2bTransactions = sqliteTable('b2b_transactions', {
+export const b2bTransactions = pgTable('b2b_transactions', {
   id: text('id').primaryKey(),
   walletId: text('wallet_id').notNull().references(() => b2bWallets.id),
   developerId: text('developer_id').notNull().references(() => developers.id),
   type: text('type', {
     enum: ['fund', 'withdraw', 'transfer', 'fee', 'refund'],
   }).notNull(),
-  amount: integer('amount').notNull(),
-  fee: integer('fee').notNull().default(0),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  fee: bigint('fee', { mode: 'number' }).notNull().default(0),
   currency: text('currency').notNull(),
   status: text('status', { enum: ['pending', 'completed', 'failed', 'reversed'] }).notNull().default('completed'),
   description: text('description'),
   reference: text('reference').notNull().unique(),
   metadata: text('metadata'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   walletIdx: index('b2b_txn_wallet_idx').on(table.walletId),
   devIdx: index('b2b_txn_dev_idx').on(table.developerId),
@@ -1294,7 +1295,7 @@ export const b2bTransactions = sqliteTable('b2b_transactions', {
 /**
  * B2B KYB Records — business verification for developers
  */
-export const b2bKybRecords = sqliteTable('b2b_kyb_records', {
+export const b2bKybRecords = pgTable('b2b_kyb_records', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   businessName: text('business_name').notNull(),
@@ -1309,9 +1310,9 @@ export const b2bKybRecords = sqliteTable('b2b_kyb_records', {
   }).notNull().default('pending'),
   tier: integer('tier').notNull().default(1),
   rejectionReason: text('rejection_reason'),
-  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  reviewedAt: timestamp('reviewed_at'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('b2b_kyb_dev_idx').on(table.developerId),
   statusIdx: index('b2b_kyb_status_idx').on(table.status),
@@ -1326,7 +1327,7 @@ export type B2BKybRecord = typeof b2bKybRecords.$inferSelect;
 // =============================================================================
 
 /** Vehicles registered under a developer/organisation */
-export const fleetVehicles = sqliteTable('fleet_vehicles', {
+export const fleetVehicles = pgTable('fleet_vehicles', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   plateNumber: text('plate_number').notNull(),
@@ -1338,8 +1339,8 @@ export const fleetVehicles = sqliteTable('fleet_vehicles', {
   assignedDriverName: text('assigned_driver_name'),
   assignedDriverPhone: text('assigned_driver_phone'),
   odometer: integer('odometer').notNull().default(0),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('fleet_vehicle_dev_idx').on(table.developerId),
   statusIdx: index('fleet_vehicle_status_idx').on(table.status),
@@ -1347,40 +1348,40 @@ export const fleetVehicles = sqliteTable('fleet_vehicles', {
 }));
 
 /** Fuel cards linked to vehicles or the organisation pool */
-export const fuelCards = sqliteTable('fuel_cards', {
+export const fuelCards = pgTable('fuel_cards', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   vehicleId: text('vehicle_id').references(() => fleetVehicles.id),
   cardNumber: text('card_number').notNull(),
   provider: text('provider').notNull().default('Apex Fuel'),
-  balance: integer('balance').notNull().default(0),
+  balance: bigint('balance', { mode: 'number' }).notNull().default(0),
   currency: text('currency').notNull().default('NGN'),
   status: text('status', { enum: ['active', 'blocked', 'expired'] }).notNull().default('active'),
-  spendLimit: integer('spend_limit'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  spendLimit: bigint('spend_limit', { mode: 'number' }),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('fuel_card_dev_idx').on(table.developerId),
   vehicleIdx: index('fuel_card_vehicle_idx').on(table.vehicleId),
 }));
 
 /** Individual fuel / trip transactions */
-export const fleetTransactions = sqliteTable('fleet_transactions', {
+export const fleetTransactions = pgTable('fleet_transactions', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   vehicleId: text('vehicle_id').references(() => fleetVehicles.id),
   fuelCardId: text('fuel_card_id').references(() => fuelCards.id),
   type: text('type', { enum: ['fuel', 'toll', 'maintenance', 'card_topup'] }).notNull(),
-  amount: integer('amount').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
   litres: integer('litres'),
-  pricePerLitre: integer('price_per_litre'),
+  pricePerLitre: bigint('price_per_litre', { mode: 'number' }),
   station: text('station'),
   location: text('location'),
   odometer: integer('odometer'),
   status: text('status', { enum: ['pending', 'completed', 'failed'] }).notNull().default('completed'),
   reference: text('reference').notNull().unique(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   devIdx: index('fleet_txn_dev_idx').on(table.developerId),
   vehicleIdx: index('fleet_txn_vehicle_idx').on(table.vehicleId),
@@ -1397,26 +1398,26 @@ export type FleetTransaction = typeof fleetTransactions.$inferSelect;
 // =============================================================================
 
 /** Health plan tiers offered to businesses */
-export const staffHealthPlans = sqliteTable('staff_health_plans', {
+export const staffHealthPlans = pgTable('staff_health_plans', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
   tier: text('tier', { enum: ['basic', 'standard', 'premium'] }).notNull().default('basic'),
   /** Monthly premium per employee in minor units */
-  monthlyPremium: integer('monthly_premium').notNull(),
+  monthlyPremium: bigint('monthly_premium', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
-  coverageLimit: integer('coverage_limit').notNull(),
-  inpatientCover: integer('inpatient_cover', { mode: 'boolean' }).notNull().default(true),
-  outpatientCover: integer('outpatient_cover', { mode: 'boolean' }).notNull().default(true),
-  dentalCover: integer('dental_cover', { mode: 'boolean' }).notNull().default(false),
-  opticalCover: integer('optical_cover', { mode: 'boolean' }).notNull().default(false),
-  maternityBenefit: integer('maternity_benefit', { mode: 'boolean' }).notNull().default(false),
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  coverageLimit: bigint('coverage_limit', { mode: 'number' }).notNull(),
+  inpatientCover: boolean('inpatient_cover').notNull().default(true),
+  outpatientCover: boolean('outpatient_cover').notNull().default(true),
+  dentalCover: boolean('dental_cover').notNull().default(false),
+  opticalCover: boolean('optical_cover').notNull().default(false),
+  maternityBenefit: boolean('maternity_benefit').notNull().default(false),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull(),
 });
 
 /** Employees enrolled on a plan by their employer (developer) */
-export const staffEnrollments = sqliteTable('staff_enrollments', {
+export const staffEnrollments = pgTable('staff_enrollments', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   planId: text('plan_id').notNull().references(() => staffHealthPlans.id),
@@ -1427,10 +1428,10 @@ export const staffEnrollments = sqliteTable('staff_enrollments', {
   dateOfBirth: text('date_of_birth'),
   gender: text('gender', { enum: ['male', 'female', 'other'] }),
   status: text('status', { enum: ['active', 'suspended', 'terminated'] }).notNull().default('active'),
-  effectiveDate: integer('effective_date', { mode: 'timestamp' }).notNull(),
-  expiryDate: integer('expiry_date', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  effectiveDate: timestamp('effective_date').notNull(),
+  expiryDate: timestamp('expiry_date'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('staff_enroll_dev_idx').on(table.developerId),
   planIdx: index('staff_enroll_plan_idx').on(table.planId),
@@ -1438,23 +1439,23 @@ export const staffEnrollments = sqliteTable('staff_enrollments', {
 }));
 
 /** Health claims filed by employees */
-export const staffClaims = sqliteTable('staff_claims', {
+export const staffClaims = pgTable('staff_claims', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   enrollmentId: text('enrollment_id').notNull().references(() => staffEnrollments.id),
   claimType: text('claim_type', { enum: ['inpatient', 'outpatient', 'dental', 'optical', 'maternity', 'other'] }).notNull(),
-  amount: integer('amount').notNull(),
-  approvedAmount: integer('approved_amount'),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  approvedAmount: bigint('approved_amount', { mode: 'number' }),
   currency: text('currency').notNull().default('NGN'),
   providerName: text('provider_name'),
   diagnosisCode: text('diagnosis_code'),
   description: text('description'),
   status: text('status', { enum: ['pending', 'under_review', 'approved', 'rejected', 'paid'] }).notNull().default('pending'),
-  submittedAt: integer('submitted_at', { mode: 'timestamp' }).notNull(),
-  reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
-  paidAt: integer('paid_at', { mode: 'timestamp' }),
+  submittedAt: timestamp('submitted_at').notNull(),
+  reviewedAt: timestamp('reviewed_at'),
+  paidAt: timestamp('paid_at'),
   rejectionReason: text('rejection_reason'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   devIdx: index('staff_claim_dev_idx').on(table.developerId),
   enrollIdx: index('staff_claim_enroll_idx').on(table.enrollmentId),
@@ -1468,7 +1469,7 @@ export type StaffClaim = typeof staffClaims.$inferSelect;
 // ─── Cross-border Payments ────────────────────────────────────────────────────
 
 /** Saved payout recipients (beneficiaries) per developer */
-export const crossborderRecipients = sqliteTable('crossborder_recipients', {
+export const crossborderRecipients = pgTable('crossborder_recipients', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   alias: text('alias').notNull(),
@@ -1484,28 +1485,28 @@ export const crossborderRecipients = sqliteTable('crossborder_recipients', {
   mobileWalletProvider: text('mobile_wallet_provider'),
   mobileWalletNumber: text('mobile_wallet_number'),
   type: text('type', { enum: ['bank_account', 'mobile_wallet', 'cash_pickup'] }).notNull().default('bank_account'),
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('xborder_recipient_dev_idx').on(table.developerId),
   countryIdx: index('xborder_recipient_country_idx').on(table.country),
 }));
 
 /** Individual cross-border transfer records */
-export const crossborderTransfers = sqliteTable('crossborder_transfers', {
+export const crossborderTransfers = pgTable('crossborder_transfers', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   recipientId: text('recipient_id').references(() => crossborderRecipients.id),
   reference: text('reference').notNull().unique(),
   /** Amount sent in source currency minor units */
-  sendAmount: integer('send_amount').notNull(),
+  sendAmount: bigint('send_amount', { mode: 'number' }).notNull(),
   sendCurrency: text('send_currency').notNull(),
   /** Amount received in destination currency minor units */
-  receiveAmount: integer('receive_amount').notNull(),
+  receiveAmount: bigint('receive_amount', { mode: 'number' }).notNull(),
   receiveCurrency: text('receive_currency').notNull(),
   exchangeRate: text('exchange_rate').notNull(),
-  fee: integer('fee').notNull().default(0),
+  fee: bigint('fee', { mode: 'number' }).notNull().default(0),
   feeCurrency: text('fee_currency').notNull().default('NGN'),
   recipientName: text('recipient_name').notNull(),
   recipientCountry: text('recipient_country').notNull(),
@@ -1514,9 +1515,9 @@ export const crossborderTransfers = sqliteTable('crossborder_transfers', {
   narration: text('narration'),
   status: text('status', { enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'] }).notNull().default('pending'),
   failureReason: text('failure_reason'),
-  initiatedAt: integer('initiated_at', { mode: 'timestamp' }).notNull(),
-  completedAt: integer('completed_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  initiatedAt: timestamp('initiated_at').notNull(),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   devIdx: index('xborder_transfer_dev_idx').on(table.developerId),
   statusIdx: index('xborder_transfer_status_idx').on(table.status),
@@ -1529,7 +1530,7 @@ export type CrossborderTransfer = typeof crossborderTransfers.$inferSelect;
 // ─── Collections & Invoicing ─────────────────────────────────────────────────
 
 /** Individual invoices raised by a developer against their customers */
-export const invoices = sqliteTable('invoices', {
+export const invoices = pgTable('invoices', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   invoiceNumber: text('invoice_number').notNull(),
@@ -1539,20 +1540,20 @@ export const invoices = sqliteTable('invoices', {
   customerPhone: text('customer_phone'),
   customerAddress: text('customer_address'),
   currency: text('currency').notNull().default('NGN'),
-  subtotal: integer('subtotal').notNull(),
+  subtotal: bigint('subtotal', { mode: 'number' }).notNull(),
   taxRate: integer('tax_rate').notNull().default(0),   // basis points e.g. 750 = 7.5%
-  taxAmount: integer('tax_amount').notNull().default(0),
-  discountAmount: integer('discount_amount').notNull().default(0),
-  total: integer('total').notNull(),
-  amountPaid: integer('amount_paid').notNull().default(0),
+  taxAmount: bigint('tax_amount', { mode: 'number' }).notNull().default(0),
+  discountAmount: bigint('discount_amount', { mode: 'number' }).notNull().default(0),
+  total: bigint('total', { mode: 'number' }).notNull(),
+  amountPaid: bigint('amount_paid', { mode: 'number' }).notNull().default(0),
   status: text('status', { enum: ['draft', 'sent', 'viewed', 'partial', 'paid', 'overdue', 'cancelled'] }).notNull().default('draft'),
   notes: text('notes'),
   paymentLink: text('payment_link'),
-  issuedAt: integer('issued_at', { mode: 'timestamp' }),
-  dueAt: integer('due_at', { mode: 'timestamp' }),
-  paidAt: integer('paid_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  issuedAt: timestamp('issued_at'),
+  dueAt: timestamp('due_at'),
+  paidAt: timestamp('paid_at'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('invoice_dev_idx').on(table.developerId),
   statusIdx: index('invoice_status_idx').on(table.status),
@@ -1560,14 +1561,14 @@ export const invoices = sqliteTable('invoices', {
 }));
 
 /** Line items belonging to an invoice */
-export const invoiceLineItems = sqliteTable('invoice_line_items', {
+export const invoiceLineItems = pgTable('invoice_line_items', {
   id: text('id').primaryKey(),
   invoiceId: text('invoice_id').notNull().references(() => invoices.id),
   description: text('description').notNull(),
   quantity: integer('quantity').notNull().default(1),
-  unitPrice: integer('unit_price').notNull(),
-  amount: integer('amount').notNull(),   // quantity * unitPrice
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  unitPrice: bigint('unit_price', { mode: 'number' }).notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),   // quantity * unitPrice
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   invoiceIdx: index('line_item_invoice_idx').on(table.invoiceId),
 }));
@@ -1581,7 +1582,7 @@ export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
  * Customer wallets issued by a developer under their business branding.
  * Each developer can issue wallets to their own end-customers.
  */
-export const embeddedWallets = sqliteTable('embedded_wallets', {
+export const embeddedWallets = pgTable('embedded_wallets', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   /** Unique identifier the developer uses for this customer in their own system */
@@ -1590,13 +1591,13 @@ export const embeddedWallets = sqliteTable('embedded_wallets', {
   customerEmail: text('customer_email'),
   customerPhone: text('customer_phone'),
   currency: text('currency').notNull().default('NGN'),
-  balance: integer('balance').notNull().default(0),
-  ledgerBalance: integer('ledger_balance').notNull().default(0),
+  balance: bigint('balance', { mode: 'number' }).notNull().default(0),
+  ledgerBalance: bigint('ledger_balance', { mode: 'number' }).notNull().default(0),
   status: text('status', { enum: ['active', 'frozen', 'closed'] }).notNull().default('active'),
   tier: text('tier', { enum: ['basic', 'standard', 'premium'] }).notNull().default('basic'),
-  dailyTxnLimit: integer('daily_txn_limit').notNull().default(50000000),  // ₦500,000
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  dailyTxnLimit: bigint('daily_txn_limit', { mode: 'number' }).notNull().default(50000000),  // ₦500,000
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('emb_wallet_dev_idx').on(table.developerId),
   extCustIdx: uniqueIndex('emb_wallet_ext_cust_idx').on(table.developerId, table.externalCustomerId),
@@ -1606,20 +1607,20 @@ export const embeddedWallets = sqliteTable('embedded_wallets', {
  * Ledger entries for embedded wallets.
  * Every credit or debit is recorded here for full auditability.
  */
-export const embeddedTransactions = sqliteTable('embedded_transactions', {
+export const embeddedTransactions = pgTable('embedded_transactions', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   walletId: text('wallet_id').notNull().references(() => embeddedWallets.id),
   type: text('type', { enum: ['credit', 'debit', 'transfer_in', 'transfer_out', 'fee', 'reversal'] }).notNull(),
-  amount: integer('amount').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
   currency: text('currency').notNull().default('NGN'),
-  balanceBefore: integer('balance_before').notNull(),
-  balanceAfter: integer('balance_after').notNull(),
+  balanceBefore: bigint('balance_before', { mode: 'number' }).notNull(),
+  balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
   reference: text('reference').notNull().unique(),
   narration: text('narration'),
   metadata: text('metadata'),  // JSON blob for arbitrary developer data
   status: text('status', { enum: ['pending', 'completed', 'failed', 'reversed'] }).notNull().default('completed'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   devIdx: index('emb_txn_dev_idx').on(table.developerId),
   walletIdx: index('emb_txn_wallet_idx').on(table.walletId),
@@ -1629,16 +1630,16 @@ export const embeddedTransactions = sqliteTable('embedded_transactions', {
 /**
  * Webhooks registered by developers to receive real-time event notifications.
  */
-export const embeddedWebhooks = sqliteTable('embedded_webhooks', {
+export const embeddedWebhooks = pgTable('embedded_webhooks', {
   id: text('id').primaryKey(),
   developerId: text('developer_id').notNull().references(() => developers.id),
   url: text('url').notNull(),
   secret: text('secret').notNull(),
   events: text('events').notNull(),  // JSON array of event types
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-  lastDeliveredAt: integer('last_delivered_at', { mode: 'timestamp' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  lastDeliveredAt: timestamp('last_delivered_at'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
 }, (table) => ({
   devIdx: index('emb_webhook_dev_idx').on(table.developerId),
 }));
@@ -1650,14 +1651,14 @@ export type EmbeddedWebhook = typeof embeddedWebhooks.$inferSelect;
 /**
  * Preview Packages - temporary preview packages uploaded via `apex preview --upload`
  */
-export const previewPackages = sqliteTable('preview_packages', {
+export const previewPackages = pgTable('preview_packages', {
   id: text('id').primaryKey(),                                      // nanoid
   token: text('token').notNull().unique(),                          // preview token from CLI
   appId: text('app_id').notNull(),                                  // reverse-domain app ID
   developerId: text('developer_id').references(() => developers.id), // null = anonymous
   packagePath: text('package_path').notNull(),                       // absolute FS path to .map file
-  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull(),
 }, (table) => ({
   tokenIdx: uniqueIndex('preview_token_idx').on(table.token),
   expiresIdx: index('preview_expires_idx').on(table.expiresAt),

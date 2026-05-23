@@ -13,7 +13,6 @@ import swaggerUi from '@fastify/swagger-ui';
 import rateLimit from '@fastify/rate-limit';
 import { type Config } from './config';
 import { initDatabase, runMigrations, getDatabase, developers } from './db';
-import { getDatabasePath } from './config';
 import * as authService from './services/auth';
 import { authRoutes, appsRoutes, versionsRoutes, registryRoutes, dashboardRoutes, adminRoutes, identityRoutes, walletRoutes, creditRoutes, historyRoutes, notificationsRoutes, billsRoutes, transfersRoutes, savingsRoutes, healthRoutes, insuranceRoutes, energyRoutes, transportRoutes, b2bRoutes, fleetRoutes, staffHealthRoutes, crossborderRoutes, invoicingRoutes, embeddedFinanceRoutes, previewRoutes } from './routes';
 import { seedBillers } from './services/bills';
@@ -49,14 +48,18 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
   const { config } = options;
 
   // Initialize database
-  initDatabase({ path: getDatabasePath(config) });
-  runMigrations();
-  seedBillers();
-  seedHealthData();
-  seedInsurancePlans();
-  seedEnergyProviders();
-  seedGasVendors();
-  seedTransportData();
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL environment variable is not set');
+  }
+  initDatabase(databaseUrl);
+  await runMigrations();
+  await seedBillers();
+  await seedHealthData();
+  await seedInsurancePlans();
+  await seedEnergyProviders();
+  await seedGasVendors();
+  await seedTransportData();
 
   // Create Fastify instance
   const fastify = Fastify({
@@ -221,8 +224,9 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
       return;
     }
     const db = getDatabase();
-    const existing = db.select({ id: developers.id, role: developers.role })
-      .from(developers).where(eq(developers.email, email)).get();
+    const rows = await db.select({ id: developers.id, role: developers.role })
+      .from(developers).where(eq(developers.email, email)).limit(1);
+    const existing = rows[0];
     if (!existing) {
       reply.code(404).send({ error: `No account found for ${email}` });
       return;
@@ -230,8 +234,8 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
     if (existing.role === 'admin') {
       return { message: `${email} is already an admin` };
     }
-    db.update(developers).set({ role: 'admin', updatedAt: new Date() })
-      .where(eq(developers.email, email)).run();
+    await db.update(developers).set({ role: 'admin', updatedAt: new Date() })
+      .where(eq(developers.email, email));
     return { message: `✓ ${email} promoted to admin` };
   });
 

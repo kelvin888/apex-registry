@@ -39,15 +39,15 @@ const PLAN_SEED: Omit<InsurancePlan, 'createdAt'>[] = [
   { id: 'INS_NHIF_KE', name: 'NHIF Kenya Standard', provider: 'NHIF', type: 'public', country: 'KE', coverageLevel: 'standard', premiumAmount: 50000, premiumFrequency: 'monthly', currency: 'KES', benefits: '["Inpatient cover","Outpatient in selected facilities","Maternity","Surgical operations","Renal dialysis"]', maxCoverage: null, waitingPeriodDays: 60, active: true },
 ];
 
-export function seedInsurancePlans(): void {
+export async function seedInsurancePlans(): Promise<void> {
   const db = getDatabase();
   const now = new Date();
 
   for (const p of PLAN_SEED) {
-    const existing = db.select({ id: insurancePlans.id }).from(insurancePlans)
-      .where(eq(insurancePlans.id, p.id)).get();
+    const [existing] = await db.select({ id: insurancePlans.id }).from(insurancePlans)
+      .where(eq(insurancePlans.id, p.id)).limit(1);
     if (!existing) {
-      db.insert(insurancePlans).values({ ...p, createdAt: now }).run();
+      await db.insert(insurancePlans).values({ ...p, createdAt: now });
     }
   }
 }
@@ -56,7 +56,7 @@ export function seedInsurancePlans(): void {
 // PLANS
 // =============================================================================
 
-export function getPlans(opts: { country?: string; type?: string; coverageLevel?: string }) {
+export async function getPlans(opts: { country?: string; type?: string; coverageLevel?: string }) {
   const db = getDatabase();
   const conditions: any[] = [eq(insurancePlans.active, true)];
   if (opts.country) conditions.push(eq(insurancePlans.country, opts.country));
@@ -64,13 +64,13 @@ export function getPlans(opts: { country?: string; type?: string; coverageLevel?
   if (opts.coverageLevel) conditions.push(eq(insurancePlans.coverageLevel, opts.coverageLevel as any));
 
   return db.select().from(insurancePlans)
-    .where(and(...conditions))
-    .all();
+    .where(and(...conditions));
 }
 
-export function getPlan(planId: string) {
+export async function getPlan(planId: string) {
   const db = getDatabase();
-  return db.select().from(insurancePlans).where(eq(insurancePlans.id, planId)).get();
+  const [row] = await db.select().from(insurancePlans).where(eq(insurancePlans.id, planId)).limit(1);
+  return row ?? null;
 }
 
 // =============================================================================
@@ -81,16 +81,16 @@ export async function enroll(userId: string, planId: string) {
   const db = getDatabase();
   const now = new Date();
 
-  const plan = db.select().from(insurancePlans).where(eq(insurancePlans.id, planId)).get();
+  const [plan] = await db.select().from(insurancePlans).where(eq(insurancePlans.id, planId)).limit(1);
   if (!plan) throw new Error('Plan not found');
 
   // Check if already enrolled in active plan
-  const existing = db.select().from(userInsurance)
-    .where(and(eq(userInsurance.userId, userId), eq(userInsurance.status, 'active'))).get();
+  const [existing] = await db.select().from(userInsurance)
+    .where(and(eq(userInsurance.userId, userId), eq(userInsurance.status, 'active'))).limit(1);
   if (existing) throw new Error('Already enrolled in an active plan');
 
   // Debit first premium
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, userId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < plan.premiumAmount) throw new Error('Insufficient balance for premium');
 
@@ -98,13 +98,13 @@ export async function enroll(userId: string, planId: string) {
   const enrollmentNumber = `ENR-${nanoid(8).toUpperCase()}`;
   const txRef = `INS-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - plan.premiumAmount,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -115,9 +115,9 @@ export async function enroll(userId: string, planId: string) {
     status: 'completed',
     metadata: JSON.stringify({ enrollmentId, planId }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -125,7 +125,7 @@ export async function enroll(userId: string, planId: string) {
     amount: plan.premiumAmount,
     balanceAfter: wallet.balance - plan.premiumAmount,
     createdAt: now,
-  }).run();
+  });
 
   // Calculate next premium date
   const nextPremium = new Date(now);
@@ -133,7 +133,7 @@ export async function enroll(userId: string, planId: string) {
   else if (plan.premiumFrequency === 'quarterly') nextPremium.setMonth(nextPremium.getMonth() + 3);
   else nextPremium.setFullYear(nextPremium.getFullYear() + 1);
 
-  db.insert(userInsurance).values({
+  await db.insert(userInsurance).values({
     id: enrollmentId,
     userId,
     planId,
@@ -144,7 +144,7 @@ export async function enroll(userId: string, planId: string) {
     totalPaid: plan.premiumAmount,
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
 
   const receiptId = await createReceipt({
     userId,
@@ -170,9 +170,9 @@ export async function enroll(userId: string, planId: string) {
   return { enrollmentId, enrollmentNumber, receiptId, premiumPaid: plan.premiumAmount };
 }
 
-export function getEnrollment(userId: string) {
+export async function getEnrollment(userId: string) {
   const db = getDatabase();
-  const enrollment = db.select({
+  const [enrollment] = await db.select({
     enrollment: userInsurance,
     planName: insurancePlans.name,
     planProvider: insurancePlans.provider,
@@ -185,7 +185,7 @@ export function getEnrollment(userId: string) {
   }).from(userInsurance)
     .innerJoin(insurancePlans, eq(userInsurance.planId, insurancePlans.id))
     .where(and(eq(userInsurance.userId, userId), eq(userInsurance.status, 'active')))
-    .get();
+    .limit(1);
 
   return enrollment || null;
 }
@@ -194,7 +194,7 @@ export async function payPremium(userId: string) {
   const db = getDatabase();
   const now = new Date();
 
-  const enrollment = db.select({
+  const [enrollment] = await db.select({
     enrollment: userInsurance,
     premiumAmount: insurancePlans.premiumAmount,
     premiumFrequency: insurancePlans.premiumFrequency,
@@ -203,24 +203,24 @@ export async function payPremium(userId: string) {
   }).from(userInsurance)
     .innerJoin(insurancePlans, eq(userInsurance.planId, insurancePlans.id))
     .where(and(eq(userInsurance.userId, userId), eq(userInsurance.status, 'active')))
-    .get();
+    .limit(1);
 
   if (!enrollment) throw new Error('No active enrollment');
 
   const amount = enrollment.premiumAmount;
-  const wallet = db.select().from(wallets).where(eq(wallets.userId, userId)).get();
+  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
   if (!wallet) throw new Error('Wallet not found');
   if (wallet.balance < amount) throw new Error('Insufficient balance');
 
   const txRef = `INSPREM-${nanoid(12)}`;
 
-  db.update(wallets).set({
+  await db.update(wallets).set({
     balance: wallet.balance - amount,
     updatedAt: now,
-  }).where(eq(wallets.id, wallet.id)).run();
+  }).where(eq(wallets.id, wallet.id));
 
   const txId = nanoid();
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txId,
     walletId: wallet.id,
     type: 'payment',
@@ -231,9 +231,9 @@ export async function payPremium(userId: string) {
     status: 'completed',
     metadata: JSON.stringify({ enrollmentId: enrollment.enrollment.id }),
     createdAt: now,
-  }).run();
+  });
 
-  db.insert(ledgerEntries).values({
+  await db.insert(ledgerEntries).values({
     id: nanoid(),
     transactionId: txId,
     walletId: wallet.id,
@@ -241,7 +241,7 @@ export async function payPremium(userId: string) {
     amount,
     balanceAfter: wallet.balance - amount,
     createdAt: now,
-  }).run();
+  });
 
   // Advance next premium date
   const nextPremium = new Date(now);
@@ -249,11 +249,11 @@ export async function payPremium(userId: string) {
   else if (enrollment.premiumFrequency === 'quarterly') nextPremium.setMonth(nextPremium.getMonth() + 3);
   else nextPremium.setFullYear(nextPremium.getFullYear() + 1);
 
-  db.update(userInsurance).set({
+  await db.update(userInsurance).set({
     totalPaid: enrollment.enrollment.totalPaid + amount,
     nextPremiumDate: nextPremium,
     updatedAt: now,
-  }).where(eq(userInsurance.id, enrollment.enrollment.id)).run();
+  }).where(eq(userInsurance.id, enrollment.enrollment.id));
 
   await createReceipt({
     userId,
@@ -272,14 +272,14 @@ export async function payPremium(userId: string) {
 
 export async function cancelEnrollment(userId: string) {
   const db = getDatabase();
-  const enrollment = db.select().from(userInsurance)
-    .where(and(eq(userInsurance.userId, userId), eq(userInsurance.status, 'active'))).get();
+  const [enrollment] = await db.select().from(userInsurance)
+    .where(and(eq(userInsurance.userId, userId), eq(userInsurance.status, 'active'))).limit(1);
   if (!enrollment) throw new Error('No active enrollment');
 
-  db.update(userInsurance).set({
+  await db.update(userInsurance).set({
     status: 'cancelled',
     updatedAt: new Date(),
-  }).where(eq(userInsurance.id, enrollment.id)).run();
+  }).where(eq(userInsurance.id, enrollment.id));
 
   await createNotification({
     userId,
@@ -307,13 +307,13 @@ export async function submitClaim(data: {
   const db = getDatabase();
   const now = new Date();
 
-  const enrollment = db.select().from(userInsurance)
-    .where(and(eq(userInsurance.userId, data.userId), eq(userInsurance.status, 'active'))).get();
+  const [enrollment] = await db.select().from(userInsurance)
+    .where(and(eq(userInsurance.userId, data.userId), eq(userInsurance.status, 'active'))).limit(1);
   if (!enrollment) throw new Error('No active insurance enrollment');
 
   const claimId = nanoid();
 
-  db.insert(insuranceClaims).values({
+  await db.insert(insuranceClaims).values({
     id: claimId,
     enrollmentId: enrollment.id,
     userId: data.userId,
@@ -325,7 +325,7 @@ export async function submitClaim(data: {
     evidenceUrls: data.evidenceUrls ? JSON.stringify(data.evidenceUrls) : null,
     appointmentId: data.appointmentId || null,
     submittedAt: now,
-  }).run();
+  });
 
   await createNotification({
     userId: data.userId,
@@ -338,18 +338,18 @@ export async function submitClaim(data: {
   return { claimId };
 }
 
-export function getClaims(userId: string) {
+export async function getClaims(userId: string) {
   const db = getDatabase();
   return db.select().from(insuranceClaims)
     .where(eq(insuranceClaims.userId, userId))
-    .orderBy(desc(insuranceClaims.submittedAt))
-    .all();
+    .orderBy(desc(insuranceClaims.submittedAt));
 }
 
-export function getClaim(claimId: string) {
+export async function getClaim(claimId: string) {
   const db = getDatabase();
-  return db.select().from(insuranceClaims)
-    .where(eq(insuranceClaims.id, claimId)).get();
+  const [row] = await db.select().from(insuranceClaims)
+    .where(eq(insuranceClaims.id, claimId)).limit(1);
+  return row ?? null;
 }
 
 /**
@@ -359,8 +359,8 @@ export async function processClaim(claimId: string, decision: 'approved' | 'reje
   const db = getDatabase();
   const now = new Date();
 
-  const claim = db.select().from(insuranceClaims)
-    .where(eq(insuranceClaims.id, claimId)).get();
+  const [claim] = await db.select().from(insuranceClaims)
+    .where(eq(insuranceClaims.id, claimId)).limit(1);
   if (!claim) throw new Error('Claim not found');
   if (claim.status !== 'submitted' && claim.status !== 'under_review') {
     throw new Error('Claim already resolved');
@@ -368,24 +368,24 @@ export async function processClaim(claimId: string, decision: 'approved' | 'reje
 
   const finalAmount = decision === 'approved' ? (approvedAmount || claim.amount) : 0;
 
-  db.update(insuranceClaims).set({
+  await db.update(insuranceClaims).set({
     status: decision === 'approved' ? 'approved' : 'rejected',
     reviewNotes: reviewNotes || null,
     approvedAmount: finalAmount,
     resolvedAt: now,
-  }).where(eq(insuranceClaims.id, claimId)).run();
+  }).where(eq(insuranceClaims.id, claimId));
 
   // If approved, credit wallet and update enrollment totals
   if (decision === 'approved' && finalAmount > 0) {
-    const wallet = db.select().from(wallets).where(eq(wallets.userId, claim.userId)).get();
+    const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, claim.userId)).limit(1);
     if (wallet) {
-      db.update(wallets).set({
+      await db.update(wallets).set({
         balance: wallet.balance + finalAmount,
         updatedAt: now,
-      }).where(eq(wallets.id, wallet.id)).run();
+      }).where(eq(wallets.id, wallet.id));
 
       const txId = nanoid();
-      db.insert(walletTransactions).values({
+      await db.insert(walletTransactions).values({
         id: txId,
         walletId: wallet.id,
         type: 'refund',
@@ -396,9 +396,9 @@ export async function processClaim(claimId: string, decision: 'approved' | 'reje
         status: 'completed',
         metadata: JSON.stringify({ claimId }),
         createdAt: now,
-      }).run();
+      });
 
-      db.insert(ledgerEntries).values({
+      await db.insert(ledgerEntries).values({
         id: nanoid(),
         transactionId: txId,
         walletId: wallet.id,
@@ -406,14 +406,14 @@ export async function processClaim(claimId: string, decision: 'approved' | 'reje
         amount: finalAmount,
         balanceAfter: wallet.balance + finalAmount,
         createdAt: now,
-      }).run();
+      });
     }
 
     // Update enrollment total claimed
-    db.update(userInsurance).set({
+    await db.update(userInsurance).set({
       totalClaimed: sql`${userInsurance.totalClaimed} + ${finalAmount}`,
       updatedAt: now,
-    }).where(eq(userInsurance.id, claim.enrollmentId)).run();
+    }).where(eq(userInsurance.id, claim.enrollmentId));
   }
 
   await createNotification({

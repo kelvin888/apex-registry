@@ -32,6 +32,7 @@ function resolveIconUrl(icon: string | null | undefined, appId: string, baseUrl:
 const searchSchema = z.object({
   q: z.string().optional(),
   category: z.string().optional(),
+  platform: z.enum(['mobile', 'web', 'universal']).optional(),
   limit: z.coerce.number().min(1).max(100).default(20),
   offset: z.coerce.number().min(0).default(0),
 });
@@ -51,6 +52,7 @@ export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fas
         properties: {
           q: { type: 'string', description: 'Search query' },
           category: { type: 'string', description: 'Filter by category' },
+          platform: { type: 'string', enum: ['mobile', 'web', 'universal'], description: 'Filter by platform' },
           limit: { type: 'number', default: 20 },
           offset: { type: 'number', default: 0 },
         },
@@ -62,6 +64,7 @@ export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fas
     const result = await appsService.listApps({
       search: query.q,
       category: query.category,
+      platform: query.platform,
       limit: query.limit,
       offset: query.offset,
       publicOnly: true,
@@ -78,6 +81,7 @@ export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fas
         description: app.description,
         icon: resolveIconUrl(app.icon, app.appId, baseUrl),
         category: app.category,
+        platform: app.platform,
         supportedCountries: app.supportedCountries ? JSON.parse(app.supportedCountries) : [],
         latestVersion: app.latestVersion ? {
           version: app.latestVersion.version,
@@ -127,6 +131,7 @@ export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fas
       description: app.description,
       icon: resolveIconUrl(app.icon, app.appId, baseUrl),
       category: app.category,
+      platform: app.platform,
       supportedCountries: app.supportedCountries ? JSON.parse(app.supportedCountries) : [],
       latestVersion: latestVersion ? {
         version: latestVersion.version,

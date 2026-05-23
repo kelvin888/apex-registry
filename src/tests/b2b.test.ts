@@ -46,14 +46,14 @@ async function inject(
 
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-b2b-test-'));
-  const dbPath = path.join(tempDir, 'test.db');
   const storagePath = path.join(tempDir, 'packages');
+  const databaseUrl = process.env.DATABASE_URL ?? 'postgresql://localhost/apex_test';
 
   const config: Config = {
     host: '127.0.0.1',
     port: 0,
     nodeEnv: 'test',
-    databasePath: dbPath,
+    databaseUrl,
     jwtSecret: 'b2b-test-secret-key-for-testing-only!',
     jwtExpiresIn: '1d',
     storagePath,
@@ -81,7 +81,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server.close();
-  closeDatabase();
+  await closeDatabase();
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 

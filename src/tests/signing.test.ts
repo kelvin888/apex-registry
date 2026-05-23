@@ -21,6 +21,8 @@ import * as appsService from '../services/apps';
 import * as versionsService from '../services/versions';
 import { type Config } from '../config';
 
+const TEST_DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://localhost/apex_test';
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 /** Replicates the CLI's calculateContentHash logic for test fixture generation. */
@@ -128,17 +130,16 @@ describe('Package Signing Enforcement', () => {
 
   beforeEach(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-signing-test-'));
-    const dbPath = path.join(tempDir, 'test.db');
     const storagePath = path.join(tempDir, 'packages');
 
-    initDatabase({ path: dbPath });
-    runMigrations();
+    initDatabase(TEST_DATABASE_URL);
+    await runMigrations();
 
     config = {
       host: '0.0.0.0',
       port: 0,
       nodeEnv: 'test',
-      databasePath: dbPath,
+      databaseUrl: TEST_DATABASE_URL,
       jwtSecret: 'test-secret-for-signing-tests!',
       jwtExpiresIn: '1d',
       storagePath,
@@ -163,8 +164,8 @@ describe('Package Signing Enforcement', () => {
     appId = app.id;
   });
 
-  afterEach(() => {
-    closeDatabase();
+  afterEach(async () => {
+    await closeDatabase();
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

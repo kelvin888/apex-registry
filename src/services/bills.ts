@@ -73,12 +73,12 @@ const BILLER_SEED: Omit<Biller, 'createdAt'>[] = [
 
 export async function seedBillers(): Promise<void> {
   const db = getDatabase();
-  const existing = db.select({ id: billers.id }).from(billers).all();
+  const existing = await db.select({ id: billers.id }).from(billers);
   if (existing.length > 0) return; // already seeded
 
   const now = new Date();
   for (const biller of BILLER_SEED) {
-    db.insert(billers).values({ ...biller, createdAt: now }).run();
+    await db.insert(billers).values({ ...biller, createdAt: now });
   }
 }
 
@@ -98,9 +98,9 @@ const CATEGORY_META: Record<string, { label: string; icon: string }> = {
   insurance: { label: 'Insurance', icon: '🛡️' },
 };
 
-export function getCategories(country?: string) {
+export async function getCategories(country?: string) {
   const db = getDatabase();
-  const rows = db
+  const rows = await db
     .select({ category: billers.category })
     .from(billers)
     .where(
@@ -109,8 +109,7 @@ export function getCategories(country?: string) {
         country ? eq(billers.country, country) : undefined,
       ),
     )
-    .groupBy(billers.category)
-    .all();
+    .groupBy(billers.category);
 
   return rows.map((r) => ({
     id: r.category,
@@ -118,7 +117,7 @@ export function getCategories(country?: string) {
   }));
 }
 
-export function getBillers(opts: { category?: string; country?: string; search?: string }) {
+export async function getBillers(opts: { category?: string; country?: string; search?: string }) {
   const db = getDatabase();
 
   const conditions = [eq(billers.active, true)];
@@ -130,21 +129,21 @@ export function getBillers(opts: { category?: string; country?: string; search?:
     .select()
     .from(billers)
     .where(and(...conditions))
-    .orderBy(billers.name)
-    .all();
+    .orderBy(billers.name);
 }
 
-export function getBiller(billerId: string) {
+export async function getBiller(billerId: string) {
   const db = getDatabase();
-  return db.select().from(billers).where(eq(billers.id, billerId)).get();
+  const [row] = await db.select().from(billers).where(eq(billers.id, billerId)).limit(1);
+  return row ?? null;
 }
 
 // =============================================================================
 // Customer Validation (simulated aggregator)
 // =============================================================================
 
-export function validateCustomer(billerId: string, customerId: string) {
-  const biller = getBiller(billerId);
+export async function validateCustomer(billerId: string, customerId: string) {
+  const biller = await getBiller(billerId);
   if (!biller) return { valid: false, error: 'Biller not found' };
 
   if (biller.customerIdPattern) {
@@ -191,7 +190,7 @@ export async function payBill(
   },
 ) {
   const db = getDatabase();
-  const biller = getBiller(opts.billerId);
+  const biller = await getBiller(opts.billerId);
   if (!biller) throw { statusCode: 404, message: 'Biller not found' };
   if (!biller.active) throw { statusCode: 400, message: 'Biller is inactive' };
 
@@ -207,11 +206,11 @@ export async function payBill(
   }
 
   // Debit user wallet
-  const wallet = db
+  const [wallet] = await db
     .select()
     .from(wallets)
     .where(and(eq(wallets.userId, userId), eq(wallets.currency, currency)))
-    .get();
+    .limit(1);
 
   if (!wallet) throw { statusCode: 400, message: 'Wallet not found for currency' };
   if (wallet.balance < amount) throw { statusCode: 400, message: 'Insufficient balance' };
@@ -229,13 +228,12 @@ export async function payBill(
   // --- Begin transactional block ---
 
   // 1. Debit wallet
-  db.update(wallets)
+  await db.update(wallets)
     .set({ balance: wallet.balance - amount, updatedAt: now })
-    .where(eq(wallets.id, wallet.id))
-    .run();
+    .where(eq(wallets.id, wallet.id));
 
   // 2. Wallet transaction record
-  db.insert(walletTransactions).values({
+  await db.insert(walletTransactions).values({
     id: txRef,
     walletId: wallet.id,
     type: 'payment',
@@ -246,15 +244,15 @@ export async function payBill(
     reference: paymentId,
     metadata: JSON.stringify({ billerId: biller.id, customerId: opts.customerId }),
     createdAt: now,
-  }).run();
+  });
 
   // 3. Ledger entries (double-entry)
   const debitId = `LED_${nanoid(16)}`;
   const creditId = `LED_${nanoid(16)}`;
-  db.insert(ledgerEntries).values([
+  await db.insert(ledgerEntries).values([
     { id: debitId, transactionId: txRef, walletId: wallet.id, entryType: 'debit', amount, balanceAfter: wallet.balance - amount, createdAt: now },
     { id: creditId, transactionId: txRef, walletId: wallet.id, entryType: 'credit', amount, balanceAfter: wallet.balance - amount, createdAt: now },
-  ]).run();
+  ]);
 
   // 4. Cross-vertical receipt (get generated ID first)
   const receiptId = await createReceipt({
@@ -271,7 +269,7 @@ export async function payBill(
   });
 
   // 5. Bill payment record
-  db.insert(billPayments).values({
+  await db.insert(billPayments).values({
     id: paymentId,
     userId,
     billerId: biller.id,
@@ -284,7 +282,7 @@ export async function payBill(
     receiptId,
     metadata: JSON.stringify({ customerName: simulateCustomerLookup(biller, opts.customerId) }),
     createdAt: now,
-  }).run();
+  });
 
   // 6. Notification
   createNotification({
@@ -298,7 +296,7 @@ export async function payBill(
 
   // 7. Optionally save biller
   if (opts.saveAsBiller) {
-    const existing = db
+    const [existing] = await db
       .select()
       .from(savedBillers)
       .where(
@@ -308,16 +306,16 @@ export async function payBill(
           eq(savedBillers.customerId, opts.customerId),
         ),
       )
-      .get();
+      .limit(1);
     if (!existing) {
-      db.insert(savedBillers).values({
+      await db.insert(savedBillers).values({
         id: `SB_${nanoid(16)}`,
         userId,
         billerId: biller.id,
         customerId: opts.customerId,
         alias: opts.alias || biller.name,
         createdAt: now,
-      }).run();
+      });
     }
   }
 
@@ -338,9 +336,9 @@ export async function payBill(
 // Saved Billers
 // =============================================================================
 
-export function getSavedBillers(userId: string) {
+export async function getSavedBillers(userId: string) {
   const db = getDatabase();
-  const rows = db
+  const rows = await db
     .select({
       id: savedBillers.id,
       customerId: savedBillers.customerId,
@@ -355,21 +353,20 @@ export function getSavedBillers(userId: string) {
     .from(savedBillers)
     .innerJoin(billers, eq(savedBillers.billerId, billers.id))
     .where(eq(savedBillers.userId, userId))
-    .orderBy(desc(savedBillers.createdAt))
-    .all();
+    .orderBy(desc(savedBillers.createdAt));
 
   return rows;
 }
 
-export function saveBiller(
+export async function saveBiller(
   userId: string,
   opts: { billerId: string; customerId: string; alias?: string },
 ) {
   const db = getDatabase();
-  const biller = getBiller(opts.billerId);
+  const biller = await getBiller(opts.billerId);
   if (!biller) throw { statusCode: 404, message: 'Biller not found' };
 
-  const existing = db
+  const [existing] = await db
     .select()
     .from(savedBillers)
     .where(
@@ -379,7 +376,7 @@ export function saveBiller(
         eq(savedBillers.customerId, opts.customerId),
       ),
     )
-    .get();
+    .limit(1);
 
   if (existing) return existing;
 
@@ -391,24 +388,23 @@ export function saveBiller(
     alias: opts.alias || biller.name,
     createdAt: new Date(),
   };
-  db.insert(savedBillers).values(row).run();
+  await db.insert(savedBillers).values(row);
   return row;
 }
 
-export function deleteSavedBiller(userId: string, savedBillerId: string) {
+export async function deleteSavedBiller(userId: string, savedBillerId: string) {
   const db = getDatabase();
-  const result = db
+  await db
     .delete(savedBillers)
-    .where(and(eq(savedBillers.id, savedBillerId), eq(savedBillers.userId, userId)))
-    .run();
-  return { deleted: result.changes > 0 };
+    .where(and(eq(savedBillers.id, savedBillerId), eq(savedBillers.userId, userId)));
+  return { deleted: true };
 }
 
 // =============================================================================
 // Scheduled Payments
 // =============================================================================
 
-export function getScheduledPayments(userId: string) {
+export async function getScheduledPayments(userId: string) {
   const db = getDatabase();
   return db
     .select({
@@ -428,11 +424,10 @@ export function getScheduledPayments(userId: string) {
     .from(scheduledPayments)
     .innerJoin(billers, eq(scheduledPayments.billerId, billers.id))
     .where(and(eq(scheduledPayments.userId, userId), eq(scheduledPayments.active, true)))
-    .orderBy(scheduledPayments.nextRunAt)
-    .all();
+    .orderBy(scheduledPayments.nextRunAt);
 }
 
-export function schedulePayment(
+export async function schedulePayment(
   userId: string,
   opts: {
     billerId: string;
@@ -443,7 +438,7 @@ export function schedulePayment(
   },
 ) {
   const db = getDatabase();
-  const biller = getBiller(opts.billerId);
+  const biller = await getBiller(opts.billerId);
   if (!biller) throw { statusCode: 404, message: 'Biller not found' };
 
   const now = new Date();
@@ -462,18 +457,17 @@ export function schedulePayment(
     lastRunAt: null,
     createdAt: now,
   };
-  db.insert(scheduledPayments).values(row).run();
+  await db.insert(scheduledPayments).values(row);
   return row;
 }
 
-export function cancelScheduledPayment(userId: string, scheduledId: string) {
+export async function cancelScheduledPayment(userId: string, scheduledId: string) {
   const db = getDatabase();
-  const result = db
+  await db
     .update(scheduledPayments)
     .set({ active: false })
-    .where(and(eq(scheduledPayments.id, scheduledId), eq(scheduledPayments.userId, userId)))
-    .run();
-  return { cancelled: result.changes > 0 };
+    .where(and(eq(scheduledPayments.id, scheduledId), eq(scheduledPayments.userId, userId)));
+  return { cancelled: true };
 }
 
 function computeNextRun(frequency: string, from: Date): Date {

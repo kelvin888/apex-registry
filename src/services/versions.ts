@@ -89,9 +89,9 @@ export async function createVersion(appId: string, developerId: string, input: C
   const db = getDatabase();
 
   // Verify app ownership
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, appId), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('App not found or access denied');
@@ -103,21 +103,20 @@ export async function createVersion(appId: string, developerId: string, input: C
   }
 
   // Check version doesn't exist
-  const existing = await db.select().from(versions)
+  const [existing] = await db.select().from(versions)
     .where(and(eq(versions.appId, appId), eq(versions.version, input.version)))
-    .get();
+    .limit(1);
 
   if (existing) {
     await db.delete(versions).where(eq(versions.id, existing.id));
   }
 
   // Get next version code
-  const latestVersion = await db.select()
+  const [latestVersion] = await db.select()
     .from(versions)
     .where(eq(versions.appId, appId))
     .orderBy(desc(versions.versionCode))
-    .limit(1)
-    .get();
+    .limit(1);
 
   const versionCode = (latestVersion?.versionCode || 0) + 1;
 
@@ -151,17 +150,17 @@ export async function uploadPackage(
   const db = getDatabase();
 
   // Get version and verify ownership
-  const version = await db.select().from(versions)
+  const [version] = await db.select().from(versions)
     .where(eq(versions.id, versionId))
-    .get();
+    .limit(1);
 
   if (!version) {
     throw new Error('Version not found');
   }
 
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, version.appId), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('Access denied');
@@ -276,7 +275,7 @@ export async function uploadPackage(
   await extractAndStoreIcon(zip, app, config);
 
   // Re-fetch the version to return the final status set by processPackage
-  const processed = await db.select().from(versions).where(eq(versions.id, versionId)).get();
+  const [processed] = await db.select().from(versions).where(eq(versions.id, versionId)).limit(1);
   return processed as Version;
 }
 
@@ -292,7 +291,7 @@ async function processPackage(versionId: string): Promise<void> {
       .set({ status: 'ready' })
       .where(eq(versions.id, versionId));
 
-    const version = await db.select().from(versions).where(eq(versions.id, versionId)).get();
+    const [version] = await db.select().from(versions).where(eq(versions.id, versionId)).limit(1);
     if (version) {
       const autoApprove = process.env.AUTO_APPROVE_PUBLISH === 'true';
       await db.update(apps)
@@ -375,15 +374,15 @@ async function extractAndStoreIcon(
 export async function getVersionById(id: string): Promise<VersionWithDownloads | null> {
   const db = getDatabase();
 
-  const version = await db.select().from(versions).where(eq(versions.id, id)).get();
+  const [version] = await db.select().from(versions).where(eq(versions.id, id)).limit(1);
   if (!version) {
     return null;
   }
 
-  const downloadCount = await db.select({ count: sql<number>`count(*)` })
+  const [downloadCount] = await db.select({ count: sql<number>`count(*)` })
     .from(downloads)
     .where(eq(downloads.versionId, id))
-    .get();
+    .limit(1);
 
   return {
     ...version,
@@ -404,10 +403,10 @@ export async function listVersions(appId: string): Promise<VersionWithDownloads[
 
   return Promise.all(
     versionsList.map(async (version) => {
-      const downloadCount = await db.select({ count: sql<number>`count(*)` })
+      const [downloadCount] = await db.select({ count: sql<number>`count(*)` })
         .from(downloads)
         .where(eq(downloads.versionId, version.id))
-        .get();
+        .limit(1);
 
       return {
         ...version,
@@ -423,12 +422,11 @@ export async function listVersions(appId: string): Promise<VersionWithDownloads[
 export async function getLatestVersion(appId: string): Promise<Version | null> {
   const db = getDatabase();
 
-  const version = await db.select()
+  const [version] = await db.select()
     .from(versions)
     .where(and(eq(versions.appId, appId), eq(versions.status, 'ready')))
     .orderBy(desc(versions.versionCode))
-    .limit(1)
-    .get();
+    .limit(1);
 
   return version || null;
 }
@@ -439,14 +437,14 @@ export async function getLatestVersion(appId: string): Promise<Version | null> {
 export async function deleteVersion(id: string, developerId: string, config: Config): Promise<boolean> {
   const db = getDatabase();
 
-  const version = await db.select().from(versions).where(eq(versions.id, id)).get();
+  const [version] = await db.select().from(versions).where(eq(versions.id, id)).limit(1);
   if (!version) {
     throw new Error('Version not found');
   }
 
-  const app = await db.select().from(apps)
+  const [app] = await db.select().from(apps)
     .where(and(eq(apps.id, version.appId), eq(apps.developerId, developerId)))
-    .get();
+    .limit(1);
 
   if (!app) {
     throw new Error('Access denied');

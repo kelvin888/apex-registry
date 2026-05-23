@@ -46,11 +46,11 @@ export async function storePreview(
   }
 
   // Remove any existing preview with the same token
-  const existing = await db
+  const [existing] = await db
     .select()
     .from(previewPackages)
     .where(eq(previewPackages.token, token))
-    .get();
+    .limit(1);
   if (existing) {
     try { fs.unlinkSync(existing.packagePath); } catch { /* already gone */ }
     await db.delete(previewPackages).where(eq(previewPackages.token, token));
@@ -82,11 +82,11 @@ export async function storePreview(
  */
 export async function getPreview(token: string) {
   const db = getDatabase();
-  const record = await db
+  const [record] = await db
     .select()
     .from(previewPackages)
     .where(eq(previewPackages.token, token))
-    .get();
+    .limit(1);
   if (!record) return null;
   if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
     await deletePreview(token);
@@ -100,11 +100,11 @@ export async function getPreview(token: string) {
  */
 export async function deletePreview(token: string) {
   const db = getDatabase();
-  const record = await db
+  const [record] = await db
     .select()
     .from(previewPackages)
     .where(eq(previewPackages.token, token))
-    .get();
+    .limit(1);
   if (record) {
     try { fs.unlinkSync(record.packagePath); } catch { /* already gone */ }
     await db.delete(previewPackages).where(eq(previewPackages.token, token));
@@ -119,8 +119,7 @@ export async function purgeExpiredPreviews() {
   const expired = await db
     .select()
     .from(previewPackages)
-    .where(lt(previewPackages.expiresAt, new Date()))
-    .all();
+    .where(lt(previewPackages.expiresAt, new Date()));
   for (const record of expired) {
     try { fs.unlinkSync(record.packagePath); } catch { /* already gone */ }
   }

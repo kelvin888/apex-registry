@@ -57,11 +57,11 @@ export async function listInvoices(developerId: string, status?: string) {
 
 export async function getInvoice(developerId: string, invoiceId: string) {
     const db = getDatabase();
-    const invoice = await db
+    const [invoice] = await db
         .select()
         .from(invoices)
         .where(and(eq(invoices.id, invoiceId), eq(invoices.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
 
     const lineItems = await db
@@ -132,11 +132,11 @@ export async function createInvoice(developerId: string, input: CreateInvoiceInp
 
 export async function sendInvoice(developerId: string, invoiceId: string) {
     const db = getDatabase();
-    const invoice = await db
+    const [invoice] = await db
         .select()
         .from(invoices)
         .where(and(eq(invoices.id, invoiceId), eq(invoices.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
     if (invoice.status === 'cancelled') throw Object.assign(new Error('Cannot send a cancelled invoice'), { statusCode: 422 });
 
@@ -159,11 +159,11 @@ export async function recordPayment(
     amountPaid: number,
 ) {
     const db = getDatabase();
-    const invoice = await db
+    const [invoice] = await db
         .select()
         .from(invoices)
         .where(and(eq(invoices.id, invoiceId), eq(invoices.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
     if (invoice.status === 'cancelled') throw Object.assign(new Error('Invoice is cancelled'), { statusCode: 422 });
     if (invoice.status === 'paid') throw Object.assign(new Error('Invoice already fully paid'), { statusCode: 422 });
@@ -184,11 +184,11 @@ export async function recordPayment(
 
 export async function cancelInvoice(developerId: string, invoiceId: string) {
     const db = getDatabase();
-    const invoice = await db
+    const [invoice] = await db
         .select()
         .from(invoices)
         .where(and(eq(invoices.id, invoiceId), eq(invoices.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
     if (invoice.status === 'paid') throw Object.assign(new Error('Cannot cancel a paid invoice'), { statusCode: 422 });
 

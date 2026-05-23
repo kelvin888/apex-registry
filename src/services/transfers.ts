@@ -64,11 +64,11 @@ export function getBanks(country = 'NG') {
 // Recipient Lookup (simulated)
 // =============================================================================
 
-export function lookupWalletRecipient(identifier: string) {
+export async function lookupWalletRecipient(identifier: string) {
   const db = getDatabase();
 
   // Try phone or email lookup
-  const user = db
+  const [user] = await db
     .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, phone: users.phone, email: users.email })
     .from(users)
     .where(
@@ -76,7 +76,7 @@ export function lookupWalletRecipient(identifier: string) {
         ? eq(users.email, identifier)
         : eq(users.phone, identifier),
     )
-    .get();
+    .limit(1);
 
   if (!user) return null;
 
@@ -121,7 +121,7 @@ export async function sendToWallet(
 
   // Look up recipient name
   const db = getDatabase();
-  const recipient = db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, opts.recipientId)).get();
+  const [recipient] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, opts.recipientId)).limit(1);
   if (!recipient) throw Object.assign(new Error('Recipient not found'), { statusCode: 404 });
   const recipientName = [recipient.firstName, recipient.lastName].filter(Boolean).join(' ') || 'Apex User';
 
@@ -152,7 +152,7 @@ export async function sendToWallet(
   });
 
   // Transfer record
-  db.insert(transfers).values({
+  await db.insert(transfers).values({
     id: transferId,
     senderId: userId,
     recipientType: 'wallet',
@@ -166,7 +166,7 @@ export async function sendToWallet(
     transactionRef: result.transactionRef,
     receiptId,
     createdAt: now,
-  }).run();
+  });
 
   // Notify recipient
   createNotification({
@@ -188,7 +188,7 @@ export async function sendToWallet(
   }
 
   // Update beneficiary transfer count
-  updateBeneficiaryStats(userId, 'wallet', opts.recipientId);
+  await updateBeneficiaryStats(userId, 'wallet', opts.recipientId);
 
   return {
     transferId,
@@ -247,7 +247,7 @@ export async function sendToBank(
   });
 
   // Transfer record
-  db.insert(transfers).values({
+  await db.insert(transfers).values({
     id: transferId,
     senderId: userId,
     recipientType: 'bank',
@@ -263,7 +263,7 @@ export async function sendToBank(
     transactionRef: result.transactionRef,
     receiptId,
     createdAt: now,
-  }).run();
+  });
 
   // Save as beneficiary
   if (opts.saveBeneficiary) {
@@ -276,7 +276,7 @@ export async function sendToBank(
     });
   }
 
-  updateBeneficiaryStats(userId, 'bank', opts.accountNumber);
+  await updateBeneficiaryStats(userId, 'bank', opts.accountNumber);
 
   return {
     transferId,
@@ -295,7 +295,7 @@ export async function sendToBank(
 // Transfer History
 // =============================================================================
 
-export function getTransferHistory(
+export async function getTransferHistory(
   userId: string,
   opts: { limit?: number; offset?: number } = {},
 ) {
@@ -303,20 +303,18 @@ export function getTransferHistory(
   const limit = opts.limit || 20;
   const offset = opts.offset || 0;
 
-  const rows = db
+  const rows = await db
     .select()
     .from(transfers)
     .where(eq(transfers.senderId, userId))
     .orderBy(desc(transfers.createdAt))
     .limit(limit)
-    .offset(offset)
-    .all();
+    .offset(offset);
 
-  const [{ total }] = db
+  const [{ total }] = await db
     .select({ total: sql<number>`count(*)` })
     .from(transfers)
-    .where(eq(transfers.senderId, userId))
-    .all();
+    .where(eq(transfers.senderId, userId));
 
   return { transfers: rows, total, hasMore: offset + limit < total };
 }
@@ -325,7 +323,7 @@ export function getTransferHistory(
 // Beneficiaries
 // =============================================================================
 
-export function getBeneficiaries(
+export async function getBeneficiaries(
   userId: string,
   opts: { type?: 'wallet' | 'bank'; search?: string } = {},
 ) {
@@ -338,8 +336,7 @@ export function getBeneficiaries(
     .select()
     .from(beneficiaries)
     .where(and(...conditions))
-    .orderBy(desc(beneficiaries.transferCount))
-    .all();
+    .orderBy(desc(beneficiaries.transferCount));
 }
 
 export async function upsertBeneficiary(
@@ -356,7 +353,7 @@ export async function upsertBeneficiary(
   const db = getDatabase();
   const now = new Date();
 
-  const existing = db
+  const [existing] = await db
     .select()
     .from(beneficiaries)
     .where(
@@ -366,23 +363,22 @@ export async function upsertBeneficiary(
         eq(beneficiaries.accountId, data.accountId),
       ),
     )
-    .get();
+    .limit(1);
 
   if (existing) {
-    db.update(beneficiaries)
+    await db.update(beneficiaries)
       .set({
         accountName: data.accountName,
         bankCode: data.bankCode || existing.bankCode,
         bankName: data.bankName || existing.bankName,
         alias: data.alias || existing.alias,
       })
-      .where(eq(beneficiaries.id, existing.id))
-      .run();
+      .where(eq(beneficiaries.id, existing.id));
     return existing.id;
   }
 
   const id = `BEN_${nanoid(16)}`;
-  db.insert(beneficiaries).values({
+  await db.insert(beneficiaries).values({
     id,
     userId,
     type: data.type,
@@ -393,28 +389,28 @@ export async function upsertBeneficiary(
     alias: data.alias || null,
     transferCount: 0,
     createdAt: now,
-  }).run();
+  });
 
   return id;
 }
 
-export function deleteBeneficiary(userId: string, beneficiaryId: string) {
+export async function deleteBeneficiary(userId: string, beneficiaryId: string) {
   const db = getDatabase();
-  const row = db
+  const [row] = await db
     .select()
     .from(beneficiaries)
     .where(and(eq(beneficiaries.id, beneficiaryId), eq(beneficiaries.userId, userId)))
-    .get();
+    .limit(1);
 
   if (!row) throw Object.assign(new Error('Beneficiary not found'), { statusCode: 404 });
 
-  db.delete(beneficiaries).where(eq(beneficiaries.id, beneficiaryId)).run();
+  await db.delete(beneficiaries).where(eq(beneficiaries.id, beneficiaryId));
   return { deleted: true };
 }
 
-function updateBeneficiaryStats(userId: string, type: string, accountId: string) {
+async function updateBeneficiaryStats(userId: string, type: string, accountId: string) {
   const db = getDatabase();
-  db.update(beneficiaries)
+  await db.update(beneficiaries)
     .set({
       transferCount: sql`${beneficiaries.transferCount} + 1`,
       lastTransferAt: new Date(),
@@ -425,8 +421,7 @@ function updateBeneficiaryStats(userId: string, type: string, accountId: string)
         eq(beneficiaries.type, type as any),
         eq(beneficiaries.accountId, accountId),
       ),
-    )
-    .run();
+    );
 }
 
 // =============================================================================

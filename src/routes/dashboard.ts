@@ -59,18 +59,18 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
         if (totalApps > 0) {
             const appIds = myApps.map((a: { id: string }) => a.id);
 
-            const dlResult = await db.select({ count: sql<number>`count(*)` })
+            const [dlResult] = await db.select({ count: sql<number>`count(*)` })
                 .from(downloads)
                 .innerJoin(versions, eq(downloads.versionId, versions.id))
                 .where(inArray(versions.appId, appIds))
-                .get();
+                .limit(1);
 
             totalDownloads = dlResult?.count ?? 0;
         }
 
         // Total registered developers — admin-only platform metric
         const totalDevelopers = request.user.role === 'admin'
-            ? await db.select({ count: sql<number>`count(*)` }).from(developers).get()
+            ? (await db.select({ count: sql<number>`count(*)` }).from(developers).limit(1))[0]
             : null;
 
         // 30-day window change estimates (downloads this month vs previous month)
@@ -84,16 +84,16 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
         if (totalApps > 0) {
             const appIds = myApps.map((a: { id: string }) => a.id);
 
-            const thisMonthResult = await db.select({ count: sql<number>`count(*)` })
+            const [thisMonthResult] = await db.select({ count: sql<number>`count(*)` })
                 .from(downloads)
                 .innerJoin(versions, eq(downloads.versionId, versions.id))
                 .where(and(
                     inArray(versions.appId, appIds),
                     sql`${downloads.createdAt} >= ${thirtyDaysAgo}`,
                 ))
-                .get();
+                .limit(1);
 
-            const prevMonthResult = await db.select({ count: sql<number>`count(*)` })
+            const [prevMonthResult] = await db.select({ count: sql<number>`count(*)` })
                 .from(downloads)
                 .innerJoin(versions, eq(downloads.versionId, versions.id))
                 .where(and(
@@ -101,7 +101,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
                     sql`${downloads.createdAt} >= ${sixtyDaysAgo}`,
                     sql`${downloads.createdAt} < ${thirtyDaysAgo}`,
                 ))
-                .get();
+                .limit(1);
 
             downloadsThisMonth = thisMonthResult?.count ?? 0;
             downloadsPrevMonth = prevMonthResult?.count ?? 0;

@@ -9,7 +9,6 @@
  *   PROMOTE_EMAIL=someone@example.com
  */
 
-import * as path from 'node:path';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -24,18 +23,23 @@ if (!email) {
     process.exit(1);
 }
 
-const rawPath = process.env.DATABASE_PATH || './data/apex.db';
-const dbPath = path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+    console.error('[promote-admin] ERROR: DATABASE_URL environment variable is not set.');
+    process.exit(1);
+}
 
 async function promoteAdmin(emailStr: string) {
-    console.log(`[promote-admin] Database: ${dbPath}`);
-    const db = initDatabase({ path: dbPath });
-    runMigrations();
+    console.log('[promote-admin] Connecting to PostgreSQL...');
+    const db = initDatabase(databaseUrl!);
+    await runMigrations();
 
-    const existing = db.select({ id: developers.id, email: developers.email, role: developers.role })
+    const rows = await db.select({ id: developers.id, email: developers.email, role: developers.role })
         .from(developers)
         .where(eq(developers.email, emailStr))
-        .get();
+        .limit(1);
+
+    const existing = rows[0];
 
     if (!existing) {
         console.error(`[promote-admin] No account found for email: ${emailStr}`);
@@ -47,17 +51,17 @@ async function promoteAdmin(emailStr: string) {
         return;
     }
 
-    db.update(developers)
+    await db.update(developers)
         .set({ role: 'admin', updatedAt: new Date() })
-        .where(eq(developers.email, emailStr))
-        .run();
+        .where(eq(developers.email, emailStr));
 
     console.log(`[promote-admin] ✓ ${emailStr} has been promoted to admin.`);
 }
 
 (async () => { // NOSONAR - top-level await unavailable in CJS; IIFE is the correct pattern
     try {
-        await promoteAdmin(email);
+        await promoteAdmin(email!);
+        process.exit(0);
     } catch (err) {
         console.error('[promote-admin] Failed:', err);
         process.exit(1);

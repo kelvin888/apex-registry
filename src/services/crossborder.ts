@@ -115,11 +115,11 @@ export async function createRecipient(
 
 export async function deleteRecipient(developerId: string, recipientId: string) {
     const db = getDatabase();
-    const row = await db
+    const [row] = await db
         .select()
         .from(crossborderRecipients)
         .where(and(eq(crossborderRecipients.id, recipientId), eq(crossborderRecipients.developerId, developerId)))
-        .get();
+        .limit(1);
     if (!row) throw Object.assign(new Error('Recipient not found'), { statusCode: 404 });
     await db
         .update(crossborderRecipients)
