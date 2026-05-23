@@ -293,11 +293,13 @@ async function processPackage(versionId: string): Promise<void> {
 
     const [version] = await db.select().from(versions).where(eq(versions.id, versionId)).limit(1);
     if (version) {
-      const autoApprove = process.env.AUTO_APPROVE_PUBLISH === 'true';
+      // This is a private/internal registry — auto-approve all published apps immediately.
+      // Set AUTO_APPROVE_PUBLISH=false in the environment to require manual approval instead.
+      const requireApproval = process.env.AUTO_APPROVE_PUBLISH === 'false';
       await db.update(apps)
-        .set(autoApprove
-          ? { status: 'approved', isPublic: true, updatedAt: new Date() }
-          : { status: 'pending', updatedAt: new Date() })
+        .set(requireApproval
+          ? { status: 'pending', updatedAt: new Date() }
+          : { status: 'approved', isPublic: true, updatedAt: new Date() })
         .where(eq(apps.id, version.appId));
     }
   } catch (error) {

@@ -70,8 +70,8 @@ export async function createApp(developerId: string, input: CreateAppInput): Pro
     category: input.category,
     platform: input.platform ?? 'mobile',
     supportedCountries: input.supportedCountries ? JSON.stringify(input.supportedCountries) : undefined,
-    status: 'draft',
-    isPublic: false,
+    status: 'approved',
+    isPublic: true,
     createdAt: now,
     updatedAt: now,
   };
