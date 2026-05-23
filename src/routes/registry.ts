@@ -234,12 +234,22 @@ export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fas
       version = await versionsService.getLatestVersion(app.id);
     }
 
-    if (!version || !version.packagePath) {
+    if (!version) {
       reply.code(404);
       throw new Error('Version not found');
     }
 
-    if (!fs.existsSync(version.packagePath)) {
+    // Prefer DB-stored bytes; fall back to filesystem for older packages
+    let packageBuffer: Buffer | null = null;
+    if (version.packageData) {
+      packageBuffer = Buffer.isBuffer(version.packageData)
+        ? version.packageData
+        : Buffer.from(version.packageData as unknown as string, 'hex');
+    } else if (version.packagePath && fs.existsSync(version.packagePath)) {
+      packageBuffer = fs.readFileSync(version.packagePath);
+    }
+
+    if (!packageBuffer) {
       reply.code(500);
       throw new Error('Package file not found');
     }
@@ -259,18 +269,15 @@ export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fas
       ipHash,
     });
 
-    // Send file
-    const stream = fs.createReadStream(version.packagePath);
-
     reply
       .header('Content-Type', 'application/octet-stream')
       .header('Content-Disposition', `attachment; filename="${app.appId}-${version.version}.map"`)
-      .header('Content-Length', version.packageSize)
+      .header('Content-Length', packageBuffer.length)
       .header('X-Package-Hash', version.packageHash)
       .header('X-Package-Version', version.version)
       .header('X-Package-Signature', version.signature || '');
 
-    return reply.send(stream);
+    return reply.send(packageBuffer);
   });
 
   /**
@@ -317,17 +324,27 @@ export const registryRoutes: FastifyPluginAsync<{ config: Config }> = async (fas
     }
 
     const version = await versionsService.getLatestVersion(app.id);
-    if (!version || !version.packagePath) {
+    if (!version) {
       reply.code(404);
       throw new Error('Version not found');
     }
 
-    if (!fs.existsSync(version.packagePath)) {
+    // Prefer DB-stored bytes; fall back to filesystem for older packages
+    let packageBuffer: Buffer | null = null;
+    if (version.packageData) {
+      packageBuffer = Buffer.isBuffer(version.packageData)
+        ? version.packageData
+        : Buffer.from(version.packageData as unknown as string, 'hex');
+    } else if (version.packagePath && fs.existsSync(version.packagePath)) {
+      packageBuffer = fs.readFileSync(version.packagePath);
+    }
+
+    if (!packageBuffer) {
       reply.code(500);
       throw new Error('Package file not found on server');
     }
 
-    const zip = new AdmZip(version.packagePath);
+    const zip = new AdmZip(packageBuffer);
     const entry = zip.getEntry(normalizedPath);
 
     if (!entry || entry.isDirectory) {

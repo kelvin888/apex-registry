@@ -246,20 +246,26 @@ export async function uploadPackage(
   // Calculate hash
   const hash = crypto.createHash('sha256').update(input.buffer).digest('hex');
 
-  // Store package
-  const packageDir = getStoragePath(config, app.appId, version.version);
-  if (!fs.existsSync(packageDir)) {
-    fs.mkdirSync(packageDir, { recursive: true });
+  // Store package bytes in the database (survives Railway redeployments).
+  // Also write to filesystem as a fallback / legacy path if STORAGE_PATH is set.
+  let packagePath: string | null = null;
+  try {
+    const packageDir = getStoragePath(config, app.appId, version.version);
+    if (!fs.existsSync(packageDir)) {
+      fs.mkdirSync(packageDir, { recursive: true });
+    }
+    packagePath = path.join(packageDir, 'package.map');
+    fs.writeFileSync(packagePath, input.buffer);
+  } catch {
+    // Filesystem may be ephemeral (Railway) — DB storage is the source of truth
   }
 
-  const packagePath = path.join(packageDir, 'package.map');
-  fs.writeFileSync(packagePath, input.buffer);
-
-  // Update version
+  // Update version — store raw bytes in package_data
   const updated = await db.update(versions)
     .set({
       status: 'processing',
       packagePath,
+      packageData: input.buffer,
       packageSize: input.buffer.length,
       packageHash: hash,
       signature: signatureToStore,

@@ -1530,4 +1530,8 @@ export async function runMigrations(): Promise<void> {
   `;
 
   await sql`CREATE INDEX IF NOT EXISTS preview_expires_idx ON preview_packages(expires_at)`;
+
+  // ── Idempotent column additions (run on every startup, safe on existing DBs) ──
+  // Add package_data BYTEA to versions so packages survive Railway redeployments.
+  await sql`ALTER TABLE versions ADD COLUMN IF NOT EXISTS package_data BYTEA`;
 }

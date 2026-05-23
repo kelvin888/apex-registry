@@ -4,7 +4,12 @@
  * Defines the database tables for the distribution server (PostgreSQL)
  */
 
-import { pgTable, text, integer, doublePrecision, boolean, bigint, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, doublePrecision, boolean, bigint, timestamp, uniqueIndex, index, customType } from 'drizzle-orm/pg-core';
+
+// Custom bytea type — stores raw binary as a Node.js Buffer
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() { return 'bytea'; },
+});
 
 /**
  * Developers - registered developers/organizations
@@ -59,7 +64,8 @@ export const versions = pgTable('versions', {
   minHostVersion: text('min_host_version'), // minimum host app version
   permissions: text('permissions'), // JSON array of required permissions
   status: text('status', { enum: ['uploading', 'processing', 'ready', 'failed'] }).notNull().default('uploading'),
-  packagePath: text('package_path'), // path to .map file
+  packagePath: text('package_path'), // path to .map file (legacy, may be null after DB-storage migration)
+  packageData: bytea('package_data'), // .map file bytes stored directly in DB (survives redeployments)
   packageSize: integer('package_size'), // bytes
   packageHash: text('package_hash'), // SHA256
   signature: text('signature'), // package signature
